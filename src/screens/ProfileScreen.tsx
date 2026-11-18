@@ -1,41 +1,18 @@
-import { useState } from 'react';
 import { router } from 'expo-router';
 import { Text, View } from 'react-native';
 import { Button, Card, Icon, Screen, StatusBadge } from '@/components/UI';
 import { useAuth } from '@/context/AuthContext';
 import { useDemo } from '@/context/DemoContext';
 import { ds } from '@/styles/dashboard';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/config/firebase';
 
 export default function ProfileScreen() {
-  const { user, profile, isAssistant, isStudent, logout } = useAuth();
+  const { user, profile, isAssistant, logout } = useAuth();
   const { dispatch: demoDispatch } = useDemo();
-  const [elevating, setElevating] = useState(false);
-  const [message, setMessage] = useState('');
 
   const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || 'Pengguna';
   const displayEmail = profile?.email || user?.email || '-';
   const displayUid = user?.uid || '-';
   const roleLabel = isAssistant ? 'Asisten Praktikum' : 'Praktikan';
-
-  // Safe developer/demo role elevation for grading and demonstration
-  const handleElevateRole = async (targetRole: 'asisten' | 'praktikan') => {
-    if (!user) return;
-    setElevating(true);
-    setMessage('');
-    try {
-      // Update role in Firestore users/{uid}
-      await updateDoc(doc(db, 'users', user.uid), {
-        role: targetRole,
-      });
-      setMessage(`Peran akun berhasil diubah menjadi ${targetRole}. Perubahan berlaku seketika secara real-time.`);
-    } catch (err: any) {
-      setMessage(`Gagal memperbarui peran di Firestore: ${err.message}. Pada Firebase produksi, perubahan peran hanya diizinkan oleh Administrator melalui Security Rules.`);
-    } finally {
-      setElevating(false);
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -48,7 +25,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <Screen title="Profil & Keamanan" subtitle="Informasi akun pengguna dan status otorisasi peran berbasis Firebase.">
+    <Screen title="Profil & Keamanan" subtitle="Informasi akun pengguna dan status otorisasi peran berbasis Cloud Firestore.">
       <Card>
         <View style={ds.sessionHeader}>
           <View style={ds.loginAvatar}>
@@ -58,13 +35,13 @@ export default function ProfileScreen() {
             <Text style={ds.cardTitle}>{displayName}</Text>
             <Text style={ds.small}>{displayEmail}</Text>
           </View>
+          <StatusBadge status={roleLabel} />
         </View>
 
         <View style={ds.wrap}>
-          <StatusBadge status={roleLabel} />
           <View style={ds.row}>
             <Icon name="shield-checkmark-outline" size={16} />
-            <Text style={ds.small}>Firestore Role Verification Active</Text>
+            <Text style={ds.small}>Verifikasi Peran Firestore: AKTIF</Text>
           </View>
         </View>
 
@@ -76,56 +53,46 @@ export default function ProfileScreen() {
             <Text style={[ds.small, { fontFamily: 'monospace' }]}>{displayUid}</Text>
           </View>
           <View>
-            <Text style={ds.loginLabel}>Email:</Text>
+            <Text style={ds.loginLabel}>Email Akun:</Text>
             <Text style={ds.small}>{displayEmail}</Text>
           </View>
           <View>
             <Text style={ds.loginLabel}>Hak Akses Sistem:</Text>
             <Text style={ds.small}>
               {isAssistant
-                ? 'Hak Asisten: Mengelola kelas, membuat/membuka/menutup sesi, melihat rekap peserta, dan menyetujui/menolak pengajuan izin praktikan.'
+                ? 'Hak Asisten: Mengelola kelas, membuat/membuka/menutup sesi praktikum, memantau rekap peserta, dan menyetujui/menolak pengajuan izin praktikan.'
                 : 'Hak Praktikan: Melihat jadwal praktikum terdaftar, melakukan presensi mandiri saat sesi dibuka, dan mengajukan izin praktikum.'}
             </Text>
           </View>
         </View>
       </Card>
 
-      {/* Demo Elevation Panel */}
+      {/* Security & Admin Procedure Panel */}
       <Card>
-        <Text style={ds.cardTitle}>Prosedur Pengangkatan Akun Demo</Text>
-        <Text style={ds.small}>
-          Sesuai spesifikasi keamanan Sprint 2, registrasi publik secara bawaan hanya menghasilkan peran Praktikan. Peran Asisten diberikan melalui konsol Firebase atau seed script Admin SDK.
+        <Text style={ds.cardTitle}>Prosedur Keamanan Otorisasi Peran</Text>
+        <Text style={ds.subtitle}>
+          Sesuai aturan keamanan Sprint 2, tidak ada pintu belakang (backdoor) untuk memilih atau mengubah peran menjadi Asisten dari sisi aplikasi klien.
         </Text>
 
-        <View style={{ gap: 8, marginTop: 4 }}>
-          <Text style={[ds.small, { fontWeight: '700' }]}>Uji Transisi Peran Real-Time (Khusus Demo Lokal):</Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Button
-              label={isAssistant ? 'Akun Sudah Asisten' : 'Ubah ke Asisten Demo'}
-              disabled={isAssistant || elevating}
-              onPress={() => handleElevateRole('asisten')}
-              variant="secondary"
-            />
-            <Button
-              label={isStudent ? 'Akun Sudah Praktikan' : 'Ubah ke Praktikan'}
-              disabled={isStudent || elevating}
-              onPress={() => handleElevateRole('praktikan')}
-              variant="secondary"
-            />
-          </View>
+        <View style={ds.notice}>
+          <Text style={[ds.noticeText, { fontWeight: '700' }]}>Cara Mengangkat Akun Menjadi Asisten:</Text>
+          <Text style={ds.noticeText}>
+            1. Buka Firebase Console &gt; Firestore Database &gt; Koleksi users.{'\n'}
+            2. Temukan dokumen dengan ID UID pengguna yang bersangkutan.{'\n'}
+            3. Ubah field &quot;role&quot; dari &quot;praktikan&quot; menjadi &quot;asisten&quot;.{'\n'}
+            4. Atau jalankan skrip seed aman pada lingkungan terotorisasi: npm run seed
+          </Text>
         </View>
 
-        {message ? (
-          <View style={ds.notice}>
-            <Text style={ds.noticeText}>{message}</Text>
-          </View>
-        ) : null}
+        <Text style={ds.small}>
+          Perubahan peran oleh Administrator di Firebase Console akan langsung tersinkronisasi secara real-time ke aplikasi tanpa perlu login ulang.
+        </Text>
       </Card>
 
       <Card>
         <Text style={ds.cardTitle}>Keluar Sesi</Text>
         <Text style={ds.small}>
-          Menghapus sesi login Firebase dari perangkat dan menghentikan seluruh listener real-time Firestore.
+          Menghapus sesi login Firebase dari perangkat ini dan menghentikan seluruh subscription data Firestore.
         </Text>
         <Button label="Keluar dari Akun" variant="danger" onPress={handleLogout} />
       </Card>

@@ -2,25 +2,12 @@ import { router } from 'expo-router';
 import { Text, View } from 'react-native';
 import { Button, Card, Icon, Screen, StatusBadge } from '@/components/UI';
 import { useAuth } from '@/context/AuthContext';
-import { useDemo } from '@/context/DemoContext';
 import { ds } from '@/styles/dashboard';
-import type { UserRole } from '@/types';
 
 export default function RoleScreen() {
-  const { user, isAssistant, isStudent } = useAuth();
-  const { dispatch: demoDispatch } = useDemo();
+  const { user, profile, isAssistant, isStudent } = useAuth();
 
   const handleContinue = () => {
-    if (isAssistant) {
-      demoDispatch({ type: 'role', role: 'Asisten' });
-    } else {
-      demoDispatch({ type: 'role', role: 'Praktikan' });
-    }
-    router.replace('/home');
-  };
-
-  const handleDemoSelect = (role: NonNullable<UserRole>) => {
-    demoDispatch({ type: 'role', role });
     router.replace('/home');
   };
 
@@ -29,7 +16,7 @@ export default function RoleScreen() {
   return (
     <Screen
       title="Peran Pengguna"
-      subtitle="Peran akun diverifikasi langsung dari basis data Cloud Firestore."
+      subtitle="Peran akun diverifikasi secara mutlak dari data Cloud Firestore."
       requireRole={false}
     >
       <Card>
@@ -39,39 +26,33 @@ export default function RoleScreen() {
           </View>
           <View style={ds.grow}>
             <Text style={ds.cardTitle}>Status Otorisasi Akun</Text>
-            <Text style={ds.small}>Email: {user?.email || 'Demo User'}</Text>
+            <Text style={ds.small}>Email: {user?.email || 'Pengguna'}</Text>
+            <Text style={ds.small}>Nama: {profile?.name || user?.displayName || 'Mahasiswa'}</Text>
           </View>
           <StatusBadge status={roleLabel} />
         </View>
 
-        <Text style={ds.subtitle}>
-          {isAssistant
-            ? 'Akun Anda telah diangkat sebagai Asisten Praktikum. Anda memiliki wewenang mengelola kelas, membuka/menutup sesi, dan memeriksa pengajuan izin.'
-            : 'Akun Anda terdaftar dengan hak akses Praktikan. Anda dapat melakukan presensi pada sesi aktif dan mengajukan izin praktikum.'}
-        </Text>
+        <View style={ds.notice}>
+          <Text style={[ds.noticeText, { fontWeight: '700' }]}>
+            Keamanan Peran Aktif:
+          </Text>
+          <Text style={ds.noticeText}>
+            {isAssistant
+              ? 'Akun Anda telah diverifikasi sebagai Asisten Praktikum. Anda memiliki wewenang untuk mengelola kelas, membuka/menutup sesi presensi, serta memutuskan permohonan izin praktikan.'
+              : 'Akun Anda terdaftar dengan hak akses Praktikan. Hak akses dibatasi untuk presensi mandiri saat sesi dibuka dan pengajuan izin praktikum.'}
+          </Text>
+        </View>
 
-        <Button label={`Masuk ke Dashboard (${roleLabel})`} onPress={handleContinue} />
+        <View style={ds.divider} />
+
+        <View style={ds.column}>
+          <Text style={ds.small}>
+            * Catatan Keamanan: Peran pengguna tidak dapat diubah secara bebas oleh klien. Peran Asisten hanya dapat diberikan oleh Administrator melalui Firebase Console atau Firebase Admin SDK.
+          </Text>
+        </View>
+
+        <Button label={`Lanjut ke Dashboard (${roleLabel})`} onPress={handleContinue} />
       </Card>
-
-      {/* Legacy Fallback Panel */}
-      <View style={ds.wrap}>
-        <View style={ds.roleCard}>
-          <Icon name="school-outline" size={38} />
-          <Text style={ds.title}>Praktikan</Text>
-          <Text style={ds.subtitle}>
-            Lihat jadwal, konfirmasi presensi mandiri saat sesi dibuka, dan pantau status kehadiran.
-          </Text>
-          <Button label="Lanjut sebagai Praktikan" onPress={() => handleDemoSelect('Praktikan')} />
-        </View>
-        <View style={ds.roleCard}>
-          <Icon name="people-outline" size={38} />
-          <Text style={ds.title}>Asisten</Text>
-          <Text style={ds.subtitle}>
-            Buka/tutup sesi praktikum, pantau presensi real-time, dan periksa permohonan izin mahasiswa.
-          </Text>
-          <Button label="Lanjut sebagai Asisten" onPress={() => handleDemoSelect('Asisten')} />
-        </View>
-      </View>
     </Screen>
   );
 }

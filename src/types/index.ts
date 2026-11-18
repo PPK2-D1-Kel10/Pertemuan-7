@@ -84,7 +84,7 @@ export type AttendanceRecord = {
 };
 
 export type LeaveStatus = 'pending' | 'approved' | 'rejected';
-export type AIStatus = 'pending' | 'success' | 'failed' | 'not_available';
+export type AIStatus = 'pending' | 'success' | 'failed' | 'unavailable' | 'not_available';
 
 export type LeaveRequest = {
   id: string;

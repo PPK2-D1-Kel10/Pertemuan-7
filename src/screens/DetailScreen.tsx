@@ -14,7 +14,7 @@ import StudentAttendanceScreen from '@/screens/StudentAttendanceScreen';
 
 export default function DetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const { isAssistant } = useAuth();
+  const { user, isAssistant } = useAuth();
   const { state: demoState, dispatch: demoDispatch } = useDemo();
 
   const [session, setSession] = useState<PracticumSession | null>(null);
@@ -100,7 +100,7 @@ export default function DetailScreen() {
     }
   };
 
-  const assistant = isAssistant || demoState.role === 'Asisten';
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
   const statusLabel = session ? getSessionStatusLabel(session.status) : 'Belum Dibuka';
 
   return (

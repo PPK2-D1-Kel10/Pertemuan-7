@@ -143,23 +143,30 @@ export default function LeaveScreen() {
         </View>
       );
     }
-    if (req.aiCategory) {
-      const confPercent = req.aiConfidence ? `${Math.round(req.aiConfidence * 100)}%` : '';
+    if (req.aiStatus === 'unavailable' || req.aiStatus === 'not_available') {
       return (
-        <View style={{ gap: 4 }}>
-          <View style={[ds.badge, ds.liveBadge]}>
-            <Text style={[ds.badgeText, ds.liveText]}>
-              🤖 AI: {req.aiCategory} {confPercent ? `(${confPercent})` : ''}
-            </Text>
+        <View style={{ gap: 4, marginTop: 4 }}>
+          <View style={[ds.badge, ds.pendingBadge]}>
+            <Text style={ds.badgeText}>🤖 AI Pengajar: Belum Terhubung</Text>
           </View>
-          {req.aiExplanation ? <Text style={ds.small}>Penjelasan AI: {req.aiExplanation}</Text> : null}
+          {req.aiCategory ? (
+            <Text style={ds.small}>Estimasi Pendukung: {req.aiCategory}</Text>
+          ) : null}
+          {req.aiExplanation ? <Text style={ds.small}>{req.aiExplanation}</Text> : null}
         </View>
       );
     }
-    if (req.aiStatus === 'not_available') {
+    if (req.aiCategory) {
+      const confPercent = req.aiConfidence ? `${Math.round(req.aiConfidence * 100)}%` : '';
+      const isSimulated = req.aiCategory.includes('[SIMULASI LOKAL]');
       return (
-        <View style={[ds.badge, ds.pendingBadge]}>
-          <Text style={ds.badgeText}>🤖 AI Pengajar Belum Dikonfigurasi (Fallback Lokal Aktif)</Text>
+        <View style={{ gap: 4, marginTop: 4 }}>
+          <View style={[ds.badge, isSimulated ? ds.pendingBadge : ds.liveBadge]}>
+            <Text style={[ds.badgeText, !isSimulated && ds.liveText]}>
+              {isSimulated ? `🤖 ${req.aiCategory}` : `🤖 AI Pengajar: ${req.aiCategory}`} {confPercent ? `(${confPercent})` : ''}
+            </Text>
+          </View>
+          {req.aiExplanation ? <Text style={ds.small}>Penjelasan: {req.aiExplanation}</Text> : null}
         </View>
       );
     }

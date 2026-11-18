@@ -15,7 +15,7 @@ import { getSessionStatusLabel } from '@/types';
 
 export default function AttendanceRecapScreen() {
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
-  const { isAssistant } = useAuth();
+  const { user, isAssistant } = useAuth();
   const { state: demoState } = useDemo();
 
   const [sessions, setSessions] = useState<PracticumSession[]>([]);
@@ -85,7 +85,7 @@ export default function AttendanceRecapScreen() {
     return () => unsub();
   }, []);
 
-  const assistant = isAssistant || demoState.role === 'Asisten';
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
 
   if (!assistant) {
     return (

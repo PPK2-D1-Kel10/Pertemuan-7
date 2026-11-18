@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const [myAttendance, setMyAttendance] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
 
-  const assistant = isAssistant || demoState.role === 'Asisten';
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
   const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || demoState.username || 'Pengguna';
 
   // Subscribe to live sessions

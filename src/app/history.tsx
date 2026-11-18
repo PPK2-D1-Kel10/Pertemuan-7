@@ -4,9 +4,9 @@ import AttendanceRecapScreen from '@/screens/AttendanceRecapScreen';
 import AttendanceHistoryScreen from '@/screens/AttendanceHistoryScreen';
 
 export default function HistoryRoute() {
-  const { isAssistant } = useAuth();
+  const { user, isAssistant } = useAuth();
   const { state: demoState } = useDemo();
-  const assistant = isAssistant || demoState.role === 'Asisten';
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
 
   return assistant ? <AttendanceRecapScreen /> : <AttendanceHistoryScreen />;
 }

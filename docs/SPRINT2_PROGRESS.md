@@ -22,15 +22,20 @@
 | **FASE 8** | Firestore Security Rules | COMPLETED | `firestore.rules` menerapkan default deny, validasi kepemilikan UID, role-based access control, proteksi sesi tertutup, dan imutabilitas presensi. |
 | **FASE 9** | Quality & Automated Testing | COMPLETED | TypeScript (`npx tsc --noEmit`) = 0 error, ESLint (`npx eslint src/`) = 0 error, Test Suite TC-01 s/d TC-30 = 30/30 PASS. |
 | **FASE 10**| Delivery & Documentation | COMPLETED | Dokumentasi lengkap di `docs/`: `SPRINT2_SETUP.md`, `SPRINT2_ARCHITECTURE.md`, `SPRINT2_TESTING.md`, `SPRINT2_DEMO.md`, `SPRINT2_PROGRESS.md`. |
+| **FASE 11**| Hardening & Security Audit | COMPLETED | Hapus backdoor pergantian role di client, lindungi secret AI dengan proxy server backend (`ai-proxy-server.cjs`), beri label transparan `[SIMULASI LOKAL]`, siapkan skrip pengujian live Firestore (`test-firestore-integration.cjs`), verifikasi bundling web statis (13 rute). |
 
 ---
 
-## Hasil Pengujian Kualitas
+## Hasil Pengujian Kualitas Terverifikasi
 
-- **TypeScript Strict Check**: `0 error`
-- **ESLint Code Quality**: `0 error, 0 warning`
-- **Sprint 1 Reducer Test**: `PASS (scripts/test-demo-state.cjs)`
-- **Sprint 2 Test Suite (TC-01 s/d TC-30)**: `30/30 PASS (scripts/test-sprint2.cjs)`
+- **TypeScript Strict Check (`npx tsc --noEmit`)**: `0 error (PASS)`
+- **ESLint Code Quality (`npx eslint src/`)**: `0 error, 0 warning (PASS)`
+- **Sprint 1 Reducer Test (`npm run test:demo`)**: `PASS (scripts/test-demo-state.cjs)`
+- **Sprint 2 Test Suite (`npm run test:sprint2`)**: `30/30 PASS (scripts/test-sprint2.cjs)`
+- **Expo Web Static Export (`npx expo export --platform web`)**: `13 routes bundled (PASS)`
+- **Firestore Emulator Integration (`npm run test:integration`)**: `BLOCKED / NOT RUN (Menunggu emulator aktif di port 8080)`
+- **Firebase Cloud Live Deployment**: `NOT RUN (Memerlukan project cloud khusus Sprint 2)`
+- **Teacher AI API External Live**: `BLOCKED (Menunggu kontrak & key eksternal; proxy server siap)`
 
 ---
 

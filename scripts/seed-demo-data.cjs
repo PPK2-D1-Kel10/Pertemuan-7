@@ -29,6 +29,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 async function seed() {
+  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PROD_SEED) {
+    console.error('[PERINGATAN] Seeding data demo diblokir di lingkungan produksi untuk melindungi data nyata.');
+    process.exit(1);
+  }
   console.log('--- Memulai Seeding Data Demo Sprint 2 PraktiKu ---');
 
   // 1. Akun Pengguna

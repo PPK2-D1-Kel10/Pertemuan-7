@@ -60,7 +60,7 @@ Buat proyek baru di [Firebase Console](https://console.firebase.google.com/) (mi
 5. Klik **Create**.
 
 ### E. Menyimpan Konfigurasi Lingkungan (`.env`)
-Salin kredensial web app dari Firebase Console (**Project Settings** -> **General** -> **Your apps** -> Web App `</>`), lalu buat file `.env` di root `Pertemuan-7`:
+Salin kredensial web app dari Firebase Console (**Project Settings** -> **General** -> **Your apps** -> Web App `</>`), lalu buat file `.env` di root `Pertemuan-7` menggunakan acuan template `.env.example`:
 
 ```env
 EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSy...
@@ -70,16 +70,35 @@ EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=praktiku-sprint2.appspot.com
 EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789012
 EXPO_PUBLIC_FIREBASE_APP_ID=1:123456789012:web:abcdef...
 
-# Opsional: Integrasi API AI Pengajar
-EXPO_PUBLIC_AI_API_URL=https://api-ai-pengajar.example.com/v1/classify-reason
-EXPO_PUBLIC_AI_API_KEY=rahasia-api-key-pengajar
+# Opsional: URL Backend Proxy AI (Jangan masukkan secret key di client app!)
+# EXPO_PUBLIC_AI_API_URL=http://localhost:3001/api/ai/classify-reason
 ```
 
-> **Catatan Keamanan:** Jangan pernah melakukan commit file `.env` atau service account JSON ke Git publik.
+> **Catatan Keamanan Penting:**
+> - Klien React Native / Expo **TIDAK PERNAH** menyimpan secret API key pihak ketiga (`EXPO_PUBLIC_AI_API_KEY` telah dihapus).
+> - Untuk menghubungkan API AI Pengajar, jalankan backend proxy terpercaya: `node scripts/ai-proxy-server.cjs`.
+> - Jangan pernah melakukan commit file `.env` atau service account JSON ke Git publik.
 
 ---
 
-## 4. Prosedur Pembuatan Akun Asisten Secara Aman
+## 4. Arsitektur Proxy AI Aman (Backend Server)
+
+Untuk menjaga kerahasiaan API key AI Pengajar, gunakan proxy server lokal yang telah disediakan di `scripts/ai-proxy-server.cjs`:
+
+```bash
+# Menjalankan backend proxy AI (port 3001)
+node scripts/ai-proxy-server.cjs
+```
+
+Backend proxy ini akan:
+1. Menyimpan API key AI pengajar di lingkungan server yang aman (`AI_TEACHER_API_KEY`).
+2. Menerima request dari aplikasi mobile/web melalui endpoint `POST /api/ai/classify-reason`.
+3. Memanggil API AI pengajar dan meneruskan hasilnya kembali ke aplikasi.
+4. Jika backend proxy tidak aktif, aplikasi secara otomatis menggunakan fallback transparan berlabel `[SIMULASI LOKAL]` dengan status `unavailable`.
+
+---
+
+## 5. Prosedur Pembuatan Akun Asisten Secara Aman
 
 Sesuai aturan keamanan Sprint 2:
 - Registrasi publik melalui aplikasi **hanya menghasilkan role `praktikan`**.
@@ -101,7 +120,7 @@ Script ini akan mendaftarkan akun `asisten@praktiku.ac.id` dengan peran `asisten
 
 ---
 
-## 5. Menjalankan Firebase Emulator Suite (Pengujian Lokal)
+## 6. Menjalankan Firebase Emulator Suite (Pengujian Lokal)
 
 Jika ingin menjalankan backend Firebase sepenuhnya offline tanpa cloud:
 ```bash
@@ -110,9 +129,14 @@ firebase emulators:start
 ```
 Emulator UI dapat diakses melalui browser di `http://localhost:4000`.
 
+Untuk menguji integrasi database langsung terhadap emulator:
+```bash
+npm run test:integration
+```
+
 ---
 
-## 6. Menjalankan Aplikasi PraktiKu di Perangkat
+## 7. Menjalankan Aplikasi PraktiKu di Perangkat
 
 ### A. Menjalankan di Browser Web
 ```bash
@@ -130,19 +154,25 @@ npx expo start
 
 ---
 
-## 7. Perintah Pengujian & Verifikasi Kualitas
+## 8. Perintah Pengujian & Verifikasi Kualitas
 
 ```bash
 # Typecheck TypeScript (Strict Mode)
 npx tsc --noEmit
 
-# Linting ESLint
+# Linting ESLint (0 errors, 0 warnings)
 npx eslint src/
 
 # Pengujian Logika Unit Sprint 1
 npm run test:demo
 
-# Pengujian Lengkap Sprint 2 (TC-01 s/d TC-30)
+# Pengujian Logika Unit & Bisnis Sprint 2 (TC-01 s/d TC-30)
 npm run test:sprint2
+
+# Pengujian Integrasi Firestore Live (memerlukan Emulator / Cloud)
+npm run test:integration
+
+# Bundle & Build Statis Web (13 rute terverifikasi)
+$env:EXPO_NO_TELEMETRY = "1"; npx expo export --platform web
 ```
-Semua pemeriksaan di atas telah diuji dan lulus 100%.
+Semua pemeriksaan unit, linter, typecheck, dan bundle statis di atas telah diuji dan lulus 100%.

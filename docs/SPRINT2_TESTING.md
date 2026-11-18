@@ -1,22 +1,26 @@
-# Laporan Pengujian Otomatis — Sprint 2 PraktiKu
+# Laporan Pengujian Terverifikasi — Sprint 2 PraktiKu
 
-Dokumen ini mendokumentasikan seluruh hasil pengujian fungsional, keamanan, validasi bisnis, dan ketahanan sistem aplikasi **PraktiKu** berdasarkan 30 Test Case (TC-01 s/d TC-30).
-
----
-
-## Ringkasan Eksekusi Pengujian
-
-- **Total Test Cases**: 30
-- **Lulus (PASS)**: 30 (100%)
-- **Gagal (FAIL)**: 0 (0%)
-- **Belum Dijalankan (NOT RUN)**: 0 (0%)
-- **Script Penguji**: `scripts/test-sprint2.cjs` & `scripts/test-demo-state.cjs`
-- **Compiler Check**: TypeScript 6.0.3 (`npx tsc --noEmit`) -> **LULUS (0 Error)**
-- **Linter Check**: ESLint 9 (`npx eslint src/`) -> **LULUS (0 Error, 0 Warning)**
+Dokumen ini menyajikan klasifikasi objektif dan bukti eksekusi seluruh pengujian aplikasi **PraktiKu** untuk Sprint 2, membedakan secara tegas antara pengujian yang telah lulus (**PASS**), gagal (**FAIL**), belum dijalankan (**NOT RUN**), dan yang membutuhkan tindakan lingkungan eksternal (**BLOCKED**).
 
 ---
 
-## Matriks Pengujian Lengkap (TC-01 s/d TC-30)
+## 1. Ringkasan Status Pengujian Berdasarkan Bukti
+
+| Kategori Pengujian | Perintah / Uji | Status | Keterangan Hasil Nyata |
+|---|---|:---:|---|
+| **TypeScript Strict Typecheck** | `npx tsc --noEmit` | **PASS** | 0 error. Seluruh modul `src/` lulus kompilasi ketat. |
+| **ESLint Static Code Quality** | `npx eslint src/` | **PASS** | 0 error, 0 warning. Semua hook dan import bersih. |
+| **Sprint 1 Backward Compatibility** | `npm run test:demo` | **PASS** | Demo reducer & validasi lokal Sprint 1 lulus 100%. |
+| **Sprint 2 Unit & Logic Suite** | `npm run test:sprint2` | **PASS** | 30/30 Test Cases lulus menguji kode produksi yang ditranspilasi. |
+| **Expo Static Web Export Bundle** | `npx expo export -p web` | **PASS** | 13 rute statis berhasil di-bundle dan di-export ke `dist/`. |
+| **Firestore Emulator Integration** | `npm run test:integration` | **BLOCKED** | Script uji siap (`scripts/test-firestore-integration.cjs`), namun emulator belum aktif di `127.0.0.1:8080`. |
+| **Firebase Cloud Deployment** | `firebase deploy` | **NOT RUN** | Menunggu penyediaan project Firebase khusus Sprint 2 dari pengguna. |
+| **Teacher AI API Live Endpoint** | External HTTP POST | **BLOCKED** | API key eksternal belum tersedia; proxy disiapkan di `scripts/ai-proxy-server.cjs`; fallback `[SIMULASI LOKAL]` aktif. |
+| **Demo 2 HP Fisik (Expo Go)** | Dual Smartphone WiFi | **NOT RUN** | Memerlukan perangkat fisik HP nyata; simulasi lokal via browser Normal & Incognito terverifikasi. |
+
+---
+
+## 2. Matriks Pengujian Unit & Logika Bisnis (TC-01 s/d TC-30)
 
 | Kode TC | Deskripsi Pengujian | Langkah Pengujian | Expected Result | Actual Result | Status |
 |:---:|:---|:---|:---|:---|:---:|

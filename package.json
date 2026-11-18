@@ -47,6 +47,7 @@
     "lint": "expo lint",
     "test:demo": "node scripts/test-demo-state.cjs",
     "test:sprint2": "node scripts/test-sprint2.cjs",
+    "test:integration": "node scripts/test-firestore-integration.cjs",
     "seed": "node scripts/seed-demo-data.cjs"
   },
   "private": true

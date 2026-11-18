@@ -75,7 +75,7 @@ function Sidebar({ visible, close }: { visible: boolean; close: () => void }) {
     return () => window.removeEventListener('keydown', keydown);
   }, [visible, close]);
 
-  const assistant = isAssistant || demoState.role === 'Asisten';
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
   const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || demoState.username || 'Pengguna';
   const displayRole = assistant ? 'Asisten Praktikum' : 'Praktikan';
 
@@ -180,7 +180,7 @@ export function Screen({
     return <Redirect href="/" />;
   }
 
-  const assistant = isAssistant || demoState.role === 'Asisten';
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
   const roleInitials = assistant ? 'AS' : 'PR';
 
   return (
