@@ -8,7 +8,9 @@ Dokumen ini disusun sebagai panduan langkah demi langkah bagi teman yang bertuga
 
 1. **Unduh File APK:**
    - Unduh file instalasi APK mandiri melalui link resmi EAS Build:
-     - **Link Build EAS:** https://expo.dev/accounts/berelax/projects/praktiku-sprint2/builds
+     - **Build ID Aktif:** `69f51b22-c1e3-46c9-94b8-6d32e0ea0a63`
+     - **Link Halaman Build:** https://expo.dev/accounts/berelax/projects/praktiku-sprint2/builds/69f51b22-c1e3-46c9-94b8-6d32e0ea0a63
+     - **Daftar Seluruh Build:** https://expo.dev/accounts/berelax/projects/praktiku-sprint2/builds
 2. **Instalasi di HP Android:**
    - Buka file APK yang telah diunduh di smartphone Android.
    - Jika muncul peringatan *"Install unknown apps"* atau *"Diinstal dari sumber tidak dikenal"*, izinkan browser/file manager untuk melanjutkan instalasi.

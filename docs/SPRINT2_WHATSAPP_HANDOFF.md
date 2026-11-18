@@ -6,9 +6,9 @@ Salin teks di bawah ini dan kirimkan ke teman Anda melalui WhatsApp atau saluran
 
 Halo! 👋 Ini aplikasi dan panduan untuk demo **Presensi Praktikum Sprint 2 (PraktiKu)** yang sudah terhubung langsung ke Firebase Cloud ZerovaApp secara real-time.
 
-📲 **Link Download APK Android:**
-https://expo.dev/accounts/berelax/projects/praktiku-sprint2/builds
-*(Pilih build terbaru, lalu klik Download APK untuk instal langsung di HP Android)*
+📲 **Link Download APK Android (EAS Build):**
+https://expo.dev/accounts/berelax/projects/praktiku-sprint2/builds/69f51b22-c1e3-46c9-94b8-6d32e0ea0a63
+*(Begitu status build selesai/Finished, klik tombol 'Install' atau 'Download' untuk unduh APK langsung ke HP Android)*
 
 📖 **Panduan Lengkap Demo & Narasi Presentasi:**
 https://github.com/PPK2-D1-Kel10/Pertemuan-7/blob/sprint-2/docs/SPRINT2_DEMO_HANDOFF.md
