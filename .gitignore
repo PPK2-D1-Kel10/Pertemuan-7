@@ -37,6 +37,8 @@ firestore-debug.log
 .env*.local
 .env
 .config/
+*.local
+.demo-credentials.local
 
 # typescript
 *.tsbuildinfo

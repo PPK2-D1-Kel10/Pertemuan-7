@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "projecklpk10",
-    "slug": "projecklpk10",
+    "name": "PraktiKu Sprint 2",
+    "slug": "praktiku-sprint2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "projecklpk10",
+    "scheme": "praktikusprint2",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.cindykurniawan201.projecklpk10"
+      "package": "com.ppk2d1kel10.praktikusprint2"
     },
     "web": {
       "output": "static",
@@ -42,8 +42,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "0bcd5f60-02eb-46fd-a4e4-7a5c070bfa07"
+        "projectId": "aa24ca57-9416-445e-b176-c52b9bf0273e"
       }
-    }
+    },
+    "owner": "berelax"
   }
 }
