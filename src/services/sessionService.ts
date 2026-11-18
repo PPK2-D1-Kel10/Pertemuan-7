@@ -1,5 +1,4 @@
 import {
-  collection,
   doc,
   getDocs,
   setDoc,
@@ -11,7 +10,7 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { getSprint2Collection, getSprint2Doc } from '@/services/firestorePaths';
 import type { PracticumSession, SessionStatus } from '@/types';
 
 export async function createSession(data: {
@@ -28,7 +27,7 @@ export async function createSession(data: {
     throw new Error('Data sesi tidak lengkap (kelas, tanggal, waktu mulai, dan selesai wajib diisi).');
   }
 
-  const sessionRef = doc(collection(db, 'sessions'));
+  const sessionRef = doc(getSprint2Collection('sessions'));
   await setDoc(sessionRef, {
     classId: data.classId,
     className: data.className,
@@ -50,7 +49,7 @@ export async function updateSession(
   sessionId: string,
   data: Partial<Pick<PracticumSession, 'date' | 'startTime' | 'endTime' | 'className' | 'practicumName'>>
 ): Promise<void> {
-  const sessionRef = doc(db, 'sessions', sessionId);
+  const sessionRef = getSprint2Doc('sessions', sessionId);
   await updateDoc(sessionRef, {
     ...data,
     updatedAt: serverTimestamp(),
@@ -59,24 +58,24 @@ export async function updateSession(
 
 export async function deleteSession(sessionId: string): Promise<void> {
   // Safe delete: Check if attendance records exist
-  const attendanceQuery = query(collection(db, 'attendance'), where('sessionId', '==', sessionId));
+  const attendanceQuery = query(getSprint2Collection('attendance'), where('sessionId', '==', sessionId));
   const attendanceSnap = await getDocs(attendanceQuery);
   if (!attendanceSnap.empty) {
     throw new Error('Sesi tidak dapat dihapus karena sudah memiliki data presensi praktikan.');
   }
 
   // Safe delete: Check if leave requests exist
-  const leaveQuery = query(collection(db, 'leaveRequests'), where('sessionId', '==', sessionId));
+  const leaveQuery = query(getSprint2Collection('leaveRequests'), where('sessionId', '==', sessionId));
   const leaveSnap = await getDocs(leaveQuery);
   if (!leaveSnap.empty) {
     throw new Error('Sesi tidak dapat dihapus karena memiliki pengajuan izin praktikan.');
   }
 
-  await deleteDoc(doc(db, 'sessions', sessionId));
+  await deleteDoc(getSprint2Doc('sessions', sessionId));
 }
 
 export async function openSession(sessionId: string): Promise<void> {
-  const sessionRef = doc(db, 'sessions', sessionId);
+  const sessionRef = getSprint2Doc('sessions', sessionId);
   await updateDoc(sessionRef, {
     status: 'open' as SessionStatus,
     updatedAt: serverTimestamp(),
@@ -84,7 +83,7 @@ export async function openSession(sessionId: string): Promise<void> {
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
-  const sessionRef = doc(db, 'sessions', sessionId);
+  const sessionRef = getSprint2Doc('sessions', sessionId);
   await updateDoc(sessionRef, {
     status: 'closed' as SessionStatus,
     updatedAt: serverTimestamp(),
@@ -96,7 +95,7 @@ export function subscribeSessions(
   assistantUid?: string,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const sessionsCol = collection(db, 'sessions');
+  const sessionsCol = getSprint2Collection('sessions');
   const q = assistantUid
     ? query(sessionsCol, where('assistantUid', '==', assistantUid))
     : sessionsCol;
@@ -136,7 +135,7 @@ export function subscribeSessionDetail(
   callback: (session: PracticumSession | null) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const sessionRef = doc(db, 'sessions', sessionId);
+  const sessionRef = getSprint2Doc('sessions', sessionId);
   return onSnapshot(
     sessionRef,
     (docSnap) => {

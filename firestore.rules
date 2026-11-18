@@ -1,126 +1,134 @@
 rules_version = '2';
+
+// Combined Firestore Security Rules: ZerovaApp + Sprint 2 Namespace (sprint2Data/app)
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Default Deny: All access forbidden unless explicitly permitted
-    match /{document=**} {
-      allow read, write: if false;
-    }
 
-    // ================= HELPER FUNCTIONS =================
-    function isAuthenticated() {
+    // =========================================================================
+    // 0. GLOBAL HELPER FUNCTIONS
+    // =========================================================================
+    function isSignedIn() {
       return request.auth != null && request.auth.uid != null;
     }
 
-    function getUserData(uid) {
-      return get(/databases/$(database)/documents/users/$(uid)).data;
+    function isSuperAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
 
-    function isAssistant() {
-      return isAuthenticated() && 
-        (getUserData(request.auth.uid).role == 'asisten' || getUserData(request.auth.uid).role == 'Asisten');
+    function getSprint2UserData(uid) {
+      return get(/databases/$(database)/documents/sprint2Data/app/users/$(uid)).data;
     }
 
-    function isStudent() {
-      return isAuthenticated() && 
-        (getUserData(request.auth.uid).role == 'praktikan' || getUserData(request.auth.uid).role == 'Praktikan');
+    function isSprint2Assistant() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/sprint2Data/app/users/$(request.auth.uid))
+        && (getSprint2UserData(request.auth.uid).role == 'asisten' || getSprint2UserData(request.auth.uid).role == 'Asisten');
     }
 
-    // ================= 1. USERS COLLECTION =================
-    match /users/{uid} {
-      // Authenticated users can view user profiles
-      allow read: if isAuthenticated();
+    // =========================================================================
+    // 1. LEGACY APP RULES (ZEROVAAPP / POJECT-POSTUTS)
+    // Tetap utuh 100% untuk menjaga kompatibilitas aplikasi sebelumnya
+    // =========================================================================
+    // Data mahasiswa (fitur lama): user login boleh membaca, super_admin boleh menulis
+    match /mahasiswa/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
 
-      // TC-01 & TC-06: Public registration strictly creates role 'praktikan'
-      // Requester UID must match document UID.
-      allow create: if isAuthenticated() &&
-        request.auth.uid == uid &&
-        request.resource.data.uid == uid &&
-        (request.resource.data.role == 'praktikan' || request.resource.data.role == 'Praktikan');
+    // Dokumen role lama: users/{userId}
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
 
-      // TC-06: Students cannot elevate their own role to 'asisten'
-      allow update: if isAuthenticated() &&
-        request.auth.uid == uid &&
-        (
-          request.resource.data.role == resource.data.role ||
-          isAssistant()
+    // =========================================================================
+    // 2. SPRINT 2 NAMESPACE RULES: sprint2Data/app/...
+    // Terisolasi penuh dari aplikasi lama, dengan otorisasi khusus praktikan & asisten
+    // =========================================================================
+    match /sprint2Data/app {
+
+      // --- SUBKOLEKSI: USERS ---
+      match /users/{uid} {
+        allow read: if isSignedIn();
+        // Registrasi publik hanya boleh membuat akun praktikan
+        allow create: if isSignedIn()
+          && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && (request.resource.data.role == 'praktikan' || request.resource.data.role == 'Praktikan');
+        // Praktikan dilarang menaikkan perannya sendiri menjadi asisten
+        allow update: if isSignedIn()
+          && request.auth.uid == uid
+          && (
+            request.resource.data.role == resource.data.role ||
+            isSprint2Assistant()
+          );
+        allow delete: if false;
+      }
+
+      // --- SUBKOLEKSI: CLASSES ---
+      match /classes/{classId} {
+        allow read: if isSignedIn();
+        allow create: if isSprint2Assistant() && request.resource.data.assistantUid == request.auth.uid;
+        allow update, delete: if isSprint2Assistant() && resource.data.assistantUid == request.auth.uid;
+      }
+
+      // --- SUBKOLEKSI: ENROLLMENTS ---
+      match /enrollments/{enrollmentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSprint2Assistant();
+      }
+
+      // --- SUBKOLEKSI: SESSIONS ---
+      match /sessions/{sessionId} {
+        allow read: if isSignedIn();
+        allow create: if isSprint2Assistant() && request.resource.data.assistantUid == request.auth.uid;
+        allow update, delete: if isSprint2Assistant() && resource.data.assistantUid == request.auth.uid;
+      }
+
+      // --- SUBKOLEKSI: ATTENDANCE ---
+      match /attendance/{attendanceId} {
+        allow read: if isSignedIn();
+        // Presensi hanya oleh mahasiswa yang login, pada sesi open, dengan ID deterministik
+        allow create: if isSignedIn()
+          && request.resource.data.studentUid == request.auth.uid
+          && attendanceId == request.resource.data.sessionId + '_' + request.auth.uid
+          && get(/databases/$(database)/documents/sprint2Data/app/sessions/$(request.resource.data.sessionId)).data.status in ['open', 'Berlangsung'];
+        // Data presensi bersifat immutable (tidak boleh diubah atau dihapus)
+        allow update, delete: if false;
+      }
+
+      // --- SUBKOLEKSI: LEAVE REQUESTS ---
+      match /leaveRequests/{leaveId} {
+        allow read: if isSignedIn();
+        // Mahasiswa hanya boleh membuat izin berstatus pending untuk UID miliknya sendiri
+        allow create: if isSignedIn()
+          && request.resource.data.studentUid == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && leaveId == request.resource.data.sessionId + '_' + request.auth.uid;
+        // Asisten boleh approve/reject. Mahasiswa dilarang approve izin sendiri atau mengubah field AI
+        allow update: if isSignedIn() && (
+          isSprint2Assistant() ||
+          (
+            request.auth.uid == resource.data.studentUid &&
+            resource.data.status == 'pending' &&
+            request.resource.data.status == 'pending' &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'reviewedBy', 'reviewNotes', 'aiCategory', 'aiConfidence', 'aiStatus', 'aiExplanation'])
+          )
         );
-
-      allow delete: if false;
+        allow delete: if isSprint2Assistant();
+      }
     }
 
-    // ================= 2. CLASSES COLLECTION =================
-    match /classes/{classId} {
-      allow read: if isAuthenticated();
-
-      // Only assistants can manage practicum classes
-      allow create: if isAssistant() && request.resource.data.assistantUid == request.auth.uid;
-      allow update: if isAssistant() && resource.data.assistantUid == request.auth.uid;
-      allow delete: if isAssistant() && resource.data.assistantUid == request.auth.uid;
-    }
-
-    // ================= 3. ENROLLMENTS COLLECTION =================
-    match /enrollments/{enrollmentId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAssistant();
-    }
-
-    // ================= 4. SESSIONS COLLECTION =================
-    match /sessions/{sessionId} {
-      allow read: if isAuthenticated();
-
-      // TC-07, TC-08, TC-29: Only assistants can create, edit, or control sessions
-      allow create: if isAssistant() && request.resource.data.assistantUid == request.auth.uid;
-      allow update: if isAssistant() && resource.data.assistantUid == request.auth.uid;
-      allow delete: if isAssistant() && resource.data.assistantUid == request.auth.uid;
-    }
-
-    // ================= 5. ATTENDANCE COLLECTION =================
-    // Deterministic Document ID: ${sessionId}_${studentUid}
-    match /attendance/{attendanceId} {
-      allow read: if isAuthenticated();
-
-      // TC-12, TC-13, TC-14:
-      // - Authenticated
-      // - studentUid matches requester's UID (cannot spoof UID)
-      // - Deterministic ID matches sessionId_studentUid
-      // - Session status must be 'open' (cannot attend closed/scheduled sessions)
-      allow create: if isAuthenticated() &&
-        request.resource.data.studentUid == request.auth.uid &&
-        attendanceId == request.resource.data.sessionId + '_' + request.auth.uid &&
-        get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.status in ['open', 'Berlangsung'];
-
-      // Attendance records are immutable once confirmed
-      allow update, delete: if false;
-    }
-
-    // ================= 6. LEAVE REQUESTS COLLECTION =================
-    // Deterministic Document ID: ${sessionId}_${studentUid}
-    match /leaveRequests/{leaveId} {
-      allow read: if isAuthenticated();
-
-      // TC-17, TC-18:
-      // - Student can submit leave for their own UID with status 'pending'
-      // - Deterministic ID prevents duplicate leave submissions
-      allow create: if isAuthenticated() &&
-        request.resource.data.studentUid == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        leaveId == request.resource.data.sessionId + '_' + request.auth.uid;
-
-      // TC-21, TC-22, TC-24:
-      // - Praktikan CANNOT approve/reject their own leave
-      // - Decision updates strictly restricted to assistants or AI field updates
-      allow update: if isAuthenticated() && (
-        isAssistant() ||
-        (
-          request.auth.uid == resource.data.studentUid &&
-          resource.data.status == 'pending' &&
-          request.resource.data.status == 'pending'
-        )
-      );
-
-      allow delete: if isAssistant();
+    // =========================================================================
+    // 3. DEFAULT DENY
+    // Semua koleksi atau path di luar mahasiswa, users, dan sprint2Data/app ditolak
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

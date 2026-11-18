@@ -4,14 +4,14 @@ import {
   signOut,
 } from 'firebase/auth';
 import {
-  doc,
   getDoc,
   setDoc,
   onSnapshot,
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { auth, db } from '@/config/firebase';
+import { auth } from '@/config/firebase';
+import { getSprint2Doc } from '@/services/firestorePaths';
 import type { UserProfile, UserRole } from '@/types';
 
 // Map Firebase Auth error codes to user-friendly Indonesian messages
@@ -93,8 +93,8 @@ export async function registerUser(
     updatedAt: now,
   };
 
-  // Write to Firestore users/{uid}
-  const userDocRef = doc(db, 'users', user.uid);
+  // Write to Firestore sprint2Data/app/users/{uid}
+  const userDocRef = getSprint2Doc('users', user.uid);
   await setDoc(userDocRef, {
     uid: user.uid,
     name: cleanName,
@@ -128,7 +128,7 @@ export async function loginUser(email: string, password: string): Promise<UserPr
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, 'users', user.uid), {
+    await setDoc(getSprint2Doc('users', user.uid), {
       ...fallbackProfile,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -144,7 +144,7 @@ export async function logoutUser(): Promise<void> {
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const userDoc = await getDoc(doc(db, 'users', uid));
+  const userDoc = await getDoc(getSprint2Doc('users', uid));
   if (!userDoc.exists()) {
     return null;
   }
@@ -165,7 +165,7 @@ export function subscribeUserProfile(
   callback: (profile: UserProfile | null) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const userDocRef = doc(db, 'users', uid);
+  const userDocRef = getSprint2Doc('users', uid);
   return onSnapshot(
     userDocRef,
     (snapshot) => {

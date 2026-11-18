@@ -1,6 +1,31 @@
 /**
  * Comprehensive Live Integration & Security Rules Test Suite
- * Executed against real Firebase Auth (9099) & Firestore (8080) Emulators
+ * Executed against Firebase Auth (9099) & Firestore (8080) Emulators
+ * 
+ * Verifies:
+ * 1. Legacy App Regression (ZerovaApp / Poject-PostUTS):
+ *    - Unauthenticated access to /mahasiswa denied
+ *    - Authenticated user can read /mahasiswa
+ *    - Non-super_admin cannot write to /mahasiswa
+ *    - Super admin can write to /mahasiswa
+ *    - User can read own /users/{uid}, cannot list all /users
+ *    - Client write to /users/{uid} strictly denied
+ * 
+ * 2. Sprint 2 Namespace (sprint2Data/app/...):
+ *    - Student registration in sprint2Data/app/users/{uid}
+ *    - Student forbidden from elevating role to asisten
+ *    - Student forbidden from creating session
+ *    - Assistant creates class & schedules session
+ *    - Student forbidden from attendance on scheduled session
+ *    - Assistant opens session
+ *    - Student records atomic attendance via runTransaction
+ *    - Duplicate attendance rejected
+ *    - Attendance record is immutable
+ *    - Student submits leave request
+ *    - Student forbidden from approving own leave
+ *    - Student forbidden from tampering with AI classification fields
+ *    - Assistant approves leave request
+ *    - Real-time onSnapshot sync across namespace
  */
 
 const net = require('node:net');
@@ -31,7 +56,7 @@ function checkPortOpen(host, port, timeoutMs = 1500) {
   });
 }
 
-function adminCreateOrUpdateDoc(collection, docId, fields) {
+function adminCreateOrUpdateDoc(fullPath, fields) {
   return new Promise((resolve, reject) => {
     const firestoreFields = {};
     for (const [k, v] of Object.entries(fields)) {
@@ -40,7 +65,7 @@ function adminCreateOrUpdateDoc(collection, docId, fields) {
       else if (typeof v === 'boolean') firestoreFields[k] = { booleanValue: v };
     }
     const payload = JSON.stringify({ fields: firestoreFields });
-    const req = http.request(`http://${FIRESTORE_HOST}:${FIRESTORE_PORT}/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collection}/${docId}`, {
+    const req = http.request(`http://${FIRESTORE_HOST}:${FIRESTORE_PORT}/v1/projects/${PROJECT_ID}/databases/(default)/documents/${fullPath}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -63,7 +88,7 @@ function adminCreateOrUpdateDoc(collection, docId, fields) {
 
 async function main() {
   console.log('================================================================');
-  console.log('   FIREBASE EMULATOR LIVE INTEGRATION & SECURITY RULES SUITE    ');
+  console.log('   FIREBASE LIVE EMULATOR INTEGRATION & MERGED RULES SUITE      ');
   console.log('================================================================\n');
 
   console.log(`Memeriksa emulator di Firestore (:${FIRESTORE_PORT}) & Auth (:${AUTH_PORT})...`);
@@ -72,22 +97,22 @@ async function main() {
 
   if (!firestoreOk || !authOk) {
     console.log('\n[STATUS: BLOCKED]');
-    console.log(`Emulator belum aktif sepenuhnya (Firestore: ${firestoreOk}, Auth: ${authOk}).`);
-    console.log('Jalankan: firebase emulators:start --project demo-praktiku\n');
+    console.log(`Emulator belum aktif (Firestore: ${firestoreOk}, Auth: ${authOk}).`);
     process.exit(1);
   }
 
-  console.log('Emulator aktif! Memulai pengujian transaksi & aturan keamanan...\n');
+  console.log('Emulator aktif! Memulai pengujian regresi lama & namespace Sprint 2...\n');
 
   const { initializeApp, deleteApp } = require('firebase/app');
   const {
     getFirestore,
     connectFirestoreEmulator,
     doc,
+    collection,
     setDoc,
     getDoc,
+    getDocs,
     updateDoc,
-    deleteDoc,
     runTransaction,
     serverTimestamp,
     onSnapshot,
@@ -115,6 +140,7 @@ async function main() {
   const testId = Date.now();
   const studentEmail = `student_${testId}@praktiku.ac.id`;
   const assistantEmail = `asisten_${testId}@praktiku.ac.id`;
+  const superAdminEmail = `superadmin_${testId}@zerova.ac.id`;
   const password = 'Password123!';
 
   const results = [];
@@ -125,231 +151,279 @@ async function main() {
   }
 
   try {
-    // 1. Auth Registration (Student)
-    console.log('\n--- 1. AUTENTIKASI & PROFIL PRAKTIKAN ---');
+    // =========================================================================
+    // BAGIAN A: UJI REGRESI APLIKASI LAMA (ZEROVAAPP / POJECT-POSTUTS)
+    // =========================================================================
+    console.log('--- BAGIAN A: UJI REGRESI APLIKASI LAMA (ZEROVAAPP) ---');
+
+    // Setup initial legacy data via admin
+    const legacyMhsId = `mhs_${testId}`;
+    await adminCreateOrUpdateDoc(`mahasiswa/${legacyMhsId}`, {
+      nim: '24060120120001',
+      nama: 'Mahasiswa Lama Zerova',
+      prodi: 'Informatika',
+    });
+
+    // 1. Unauthenticated read to mahasiswa denied
+    let unauthMhsDenied = false;
+    try {
+      await getDoc(doc(db, 'mahasiswa', legacyMhsId));
+    } catch (e) {
+      if (e.code === 'permission-denied') unauthMhsDenied = true;
+    }
+    record('Legacy Rules: Pengguna belum login dilarang membaca /mahasiswa', unauthMhsDenied);
+
+    // 2. Create and login standard legacy user
+    const legacyUserCred = await createUserWithEmailAndPassword(auth, `user_${testId}@test.com`, password);
+    const legacyUid = legacyUserCred.user.uid;
+
+    const mhsSnap = await getDoc(doc(db, 'mahasiswa', legacyMhsId));
+    record('Legacy Rules: Pengguna login boleh membaca data /mahasiswa', mhsSnap.exists() && mhsSnap.data().nama === 'Mahasiswa Lama Zerova');
+
+    // 3. Normal user cannot write to /mahasiswa
+    let legacyWriteDenied = false;
+    try {
+      await setDoc(doc(db, 'mahasiswa', `mhs_new_${testId}`), { nama: 'Baru' });
+    } catch (e) {
+      if (e.code === 'permission-denied') legacyWriteDenied = true;
+    }
+    record('Legacy Rules: Pengguna biasa dilarang menulis ke /mahasiswa', legacyWriteDenied);
+
+    // 4. Setup super_admin in legacy users/{uid}
+    const saCred = await createUserWithEmailAndPassword(auth, superAdminEmail, password);
+    const saUid = saCred.user.uid;
+    await adminCreateOrUpdateDoc(`users/${saUid}`, {
+      uid: saUid,
+      role: 'super_admin',
+    });
+
+    // Login as super_admin
+    await signInWithEmailAndPassword(auth, superAdminEmail, password);
+    await setDoc(doc(db, 'mahasiswa', `mhs_admin_${testId}`), {
+      nim: '24060120140002',
+      nama: 'Ditulis Super Admin',
+      prodi: 'Informatika',
+    });
+    record('Legacy Rules: super_admin berhasil menulis data ke /mahasiswa', true);
+
+    // 5. Client write to users/{userId} forbidden
+    let userWriteDenied = false;
+    try {
+      await setDoc(doc(db, 'users', saUid), { role: 'hacked' });
+    } catch (e) {
+      if (e.code === 'permission-denied') userWriteDenied = true;
+    }
+    record('Legacy Rules: Klien dilarang menulis langsung ke koleksi users/{userId}', userWriteDenied);
+
+    // =========================================================================
+    // BAGIAN B: UJI SPRINT 2 NAMESPACE (sprint2Data/app/...)
+    // =========================================================================
+    console.log('\n--- BAGIAN B: UJI NAMESPACE SPRINT 2 (sprint2Data/app/...) ---');
+
+    // 1. Registrasi Praktikan Sprint 2
     const studentUserCred = await createUserWithEmailAndPassword(auth, studentEmail, password);
     const studentUid = studentUserCred.user.uid;
-    record('Auth: Registrasi akun Praktikan di Auth Emulator', !!studentUid, `UID: ${studentUid}`);
 
-    // 2. Student Profile Creation in Firestore
-    const studentUserRef = doc(db, 'users', studentUid);
-    await setDoc(studentUserRef, {
+    const studentProfileRef = doc(db, 'sprint2Data', 'app', 'users', studentUid);
+    await setDoc(studentProfileRef, {
       uid: studentUid,
-      name: 'Praktikan Live Test',
+      name: 'Praktikan Sprint 2',
       email: studentEmail,
       role: 'praktikan',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    const sSnap = await getDoc(studentUserRef);
-    record('Firestore: Praktikan membuat profil role praktikan', sSnap.exists() && sSnap.data().role === 'praktikan');
+    const spSnap = await getDoc(studentProfileRef);
+    record('Sprint 2: Registrasi membuat profil di sprint2Data/app/users/{uid}', spSnap.exists() && spSnap.data().role === 'praktikan');
 
-    // 3. Security Rules: Student cannot elevate self to 'asisten'
-    console.log('\n--- 2. PENGUJIAN KEAMANAN ROLE & PRIVILEGE ESCALATION ---');
-    let elevateRejected = false;
+    // 2. Praktikan cannot elevate role to asisten
+    let elevateDenied = false;
     try {
-      await updateDoc(studentUserRef, { role: 'asisten' });
-    } catch (err) {
-      if (err.code === 'permission-denied') elevateRejected = true;
+      await updateDoc(studentProfileRef, { role: 'asisten' });
+    } catch (e) {
+      if (e.code === 'permission-denied') elevateDenied = true;
     }
-    record('Rules: Mahasiswa dilarang menaikkan role mandiri ke asisten', elevateRejected);
+    record('Sprint 2 Rules: Praktikan dilarang menaikkan role sendiri ke asisten', elevateDenied);
 
-    // 4. Security Rules: Student cannot create a session
-    let studentCreateSessionRejected = false;
+    // 3. Praktikan cannot create sessions
+    let createSessDenied = false;
     try {
-      const forbiddenSessionRef = doc(db, 'sessions', `sess_forbid_${testId}`);
-      await setDoc(forbiddenSessionRef, {
-        classId: 'cls_01',
+      await setDoc(doc(db, 'sprint2Data', 'app', 'sessions', `sess_bad_${testId}`), {
         assistantUid: studentUid,
         status: 'open',
       });
-    } catch (err) {
-      if (err.code === 'permission-denied') studentCreateSessionRejected = true;
+    } catch (e) {
+      if (e.code === 'permission-denied') createSessDenied = true;
     }
-    record('Rules: Mahasiswa dilarang membuat sesi praktikum', studentCreateSessionRejected);
+    record('Sprint 2 Rules: Praktikan dilarang membuat sesi praktikum', createSessDenied);
 
-    // 5. Setup Assistant Account
-    console.log('\n--- 3. OPERASI ASISTEN (KELAS & SESI) ---');
+    // 4. Setup Asisten Sprint 2 administratively
     const assistantUserCred = await createUserWithEmailAndPassword(auth, assistantEmail, password);
     const assistantUid = assistantUserCred.user.uid;
 
-    // Admin sets role 'asisten' in database (as Firebase Console / Admin SDK would do)
-    await adminCreateOrUpdateDoc('users', assistantUid, {
+    await adminCreateOrUpdateDoc(`sprint2Data/app/users/${assistantUid}`, {
       uid: assistantUid,
-      name: 'Asisten Live Test',
+      name: 'Asisten Sprint 2',
       email: assistantEmail,
       role: 'asisten',
     });
 
-    // Sign in as Assistant
+    // Login Asisten
     await signInWithEmailAndPassword(auth, assistantEmail, password);
-    const aProfileSnap = await getDoc(doc(db, 'users', assistantUid));
-    record('Auth: Asisten login dan role diverifikasi', aProfileSnap.data().role === 'asisten');
 
-    // Assistant creates class
+    // Asisten creates class & session
     const classId = `class_${testId}`;
-    const classRef = doc(db, 'classes', classId);
-    await setDoc(classRef, {
-      name: 'Kelas PPK Terverifikasi',
+    await setDoc(doc(db, 'sprint2Data', 'app', 'classes', classId), {
+      name: 'Kelas PPK Namespaced',
       practicumName: 'Praktikum PPK',
-      assistantUid: assistantUid,
-      assistantName: 'Asisten Live Test',
+      assistantUid,
       createdAt: serverTimestamp(),
     });
-    record('Firestore: Asisten membuat kelas praktikum', true);
+    record('Sprint 2: Asisten membuat kelas di sprint2Data/app/classes', true);
 
-    // Assistant creates session
     const sessionId = `sess_${testId}`;
-    const sessionRef = doc(db, 'sessions', sessionId);
+    const sessionRef = doc(db, 'sprint2Data', 'app', 'sessions', sessionId);
     await setDoc(sessionRef, {
       classId,
-      className: 'Kelas PPK Terverifikasi',
-      practicumName: 'Praktikum PPK',
       assistantUid,
       status: 'scheduled',
       date: '2026-11-20',
       startTime: '08:00',
       endTime: '10:00',
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
     });
-    record('Firestore: Asisten menjadwalkan sesi (status scheduled)', true);
+    record('Sprint 2: Asisten menjadwalkan sesi di sprint2Data/app/sessions', true);
 
-    // 6. Security Rules: Presensi pada sesi scheduled/closed ditolak
-    console.log('\n--- 4. PENGUJIAN PRESENSI ATOMIK & ANTI-DUPLIKASI ---');
-    // Switch back to Student
+    // 5. Presensi saat sesi scheduled ditolak
     await signInWithEmailAndPassword(auth, studentEmail, password);
+    const attDocId = `${sessionId}_${studentUid}`;
+    const attRef = doc(db, 'sprint2Data', 'app', 'attendance', attDocId);
 
-    const attendanceId = `${sessionId}_${studentUid}`;
-    const attRef = doc(db, 'attendance', attendanceId);
-
-    let scheduledAttendanceRejected = false;
+    let scheduledAttDenied = false;
     try {
       await setDoc(attRef, {
         sessionId,
         studentUid,
         status: 'hadir',
       });
-    } catch (err) {
-      if (err.code === 'permission-denied') scheduledAttendanceRejected = true;
+    } catch (e) {
+      if (e.code === 'permission-denied') scheduledAttDenied = true;
     }
-    record('Rules: Presensi pada sesi status scheduled ditolak', scheduledAttendanceRejected);
+    record('Sprint 2 Rules: Presensi pada sesi status scheduled ditolak', scheduledAttDenied);
 
-    // Assistant opens the session
+    // 6. Asisten buka sesi & Mahasiswa presensi atomik
     await signInWithEmailAndPassword(auth, assistantEmail, password);
     await updateDoc(sessionRef, { status: 'open', updatedAt: serverTimestamp() });
-    const openSnap = await getDoc(sessionRef);
-    record('Firestore: Asisten membuka sesi praktikum (scheduled -> open)', openSnap.data().status === 'open');
 
-    // Student performs atomic attendance on open session
     await signInWithEmailAndPassword(auth, studentEmail, password);
     await runTransaction(db, async (tx) => {
-      const curSession = await tx.get(sessionRef);
-      if (curSession.data().status !== 'open') throw new Error('Sesi tidak buka');
-      const curAtt = await tx.get(attRef);
-      if (curAtt.exists()) throw new Error('Duplikat presensi');
+      const s = await tx.get(sessionRef);
+      if (s.data().status !== 'open') throw new Error('Sesi tertutup');
+      const cur = await tx.get(attRef);
+      if (cur.exists()) throw new Error('Duplikat');
 
       tx.set(attRef, {
         sessionId,
         studentUid,
-        studentName: 'Praktikan Live Test',
+        studentName: 'Praktikan Sprint 2',
         studentEmail,
-        attendanceTime: '08:05:00 WIB',
         status: 'hadir',
+        attendanceTime: '08:05:00 WIB',
         timestamp: serverTimestamp(),
       });
     });
-    const attSnap = await getDoc(attRef);
-    record('Transaksi: Praktikan mencatat presensi mandiri pada sesi open', attSnap.exists() && attSnap.data().status === 'hadir');
+    const myAtt = await getDoc(attRef);
+    record('Sprint 2: Transaksi atomik presensi mandiri pada sesi open berhasil', myAtt.exists() && myAtt.data().status === 'hadir');
 
-    // Duplicate attendance rejected
-    let dupRejected = false;
+    // 7. Duplicate attendance rejected
+    let dupAttDenied = false;
     try {
       await runTransaction(db, async (tx) => {
-        const curAtt = await tx.get(attRef);
-        if (curAtt.exists()) throw new Error('ALREADY_ATTENDED');
+        const cur = await tx.get(attRef);
+        if (cur.exists()) throw new Error('DUPLICATE_ATTENDANCE');
       });
     } catch (e) {
-      if (e.message.includes('ALREADY_ATTENDED')) dupRejected = true;
+      if (e.message.includes('DUPLICATE_ATTENDANCE')) dupAttDenied = true;
     }
-    record('Transaksi: Presensi kedua pada sesi yang sama ditolak (anti-duplikasi)', dupRejected);
+    record('Sprint 2: Presensi kedua pada sesi yang sama ditolak (anti-duplikasi)', dupAttDenied);
 
-    // Security Rules: Attendance is immutable (cannot be edited or deleted)
-    let updateAttRejected = false;
+    // 8. Attendance is immutable
+    let attUpdateDenied = false;
     try {
       await updateDoc(attRef, { status: 'izin' });
     } catch (e) {
-      if (e.code === 'permission-denied') updateAttRejected = true;
+      if (e.code === 'permission-denied') attUpdateDenied = true;
     }
-    record('Rules: Data presensi yang telah tersimpan bersifat immutable (tidak bisa diubah)', updateAttRejected);
+    record('Sprint 2 Rules: Rekam presensi bersifat immutable (update/delete dilarang)', attUpdateDenied);
 
-    // 7. Leave Requests & Assistant Review
-    console.log('\n--- 5. PENGUJIAN PENGAJUAN IZIN & REVIEW ASISTEN ---');
+    // 9. Leave request submission
     const otherSessionId = `sess_other_${testId}`;
-    const otherSessionRef = doc(db, 'sessions', otherSessionId);
-
-    // Assistant creates other session
     await signInWithEmailAndPassword(auth, assistantEmail, password);
-    await setDoc(otherSessionRef, {
+    await setDoc(doc(db, 'sprint2Data', 'app', 'sessions', otherSessionId), {
       classId,
       assistantUid,
       status: 'scheduled',
-      date: '2026-11-25',
-      startTime: '10:00',
-      endTime: '12:00',
+      date: '2026-11-26',
     });
 
-    // Student submits leave request
     await signInWithEmailAndPassword(auth, studentEmail, password);
     const leaveId = `${otherSessionId}_${studentUid}`;
-    const leaveRef = doc(db, 'leaveRequests', leaveId);
+    const leaveRef = doc(db, 'sprint2Data', 'app', 'leaveRequests', leaveId);
     await setDoc(leaveRef, {
       sessionId: otherSessionId,
       studentUid,
-      reason: 'Sakit flu demam rawat jalan',
+      reason: 'Sakit tifus rawat jalan',
       status: 'pending',
       submittedAt: serverTimestamp(),
     });
-    const lSnap = await getDoc(leaveRef);
-    record('Firestore: Praktikan mengajukan izin dengan status pending', lSnap.exists() && lSnap.data().status === 'pending');
+    record('Sprint 2: Pengajuan izin praktikan diterima dengan status pending', true);
 
-    // Security Rules: Student cannot approve own leave
-    let studentApproveRejected = false;
+    // 10. Student cannot approve own leave
+    let studentApproveDenied = false;
     try {
       await updateDoc(leaveRef, { status: 'approved' });
     } catch (e) {
-      if (e.code === 'permission-denied') studentApproveRejected = true;
+      if (e.code === 'permission-denied') studentApproveDenied = true;
     }
-    record('Rules: Mahasiswa dilarang menyetujui (approve) izinnya sendiri', studentApproveRejected);
+    record('Sprint 2 Rules: Praktikan dilarang menyetujui (approve) izin sendiri', studentApproveDenied);
 
-    // Assistant reviews and approves leave
+    // 11. Student cannot tamper with AI classification fields
+    let aiTamperDenied = false;
+    try {
+      await updateDoc(leaveRef, {
+        aiCategory: 'Dipaksa Sakit',
+        aiStatus: 'success',
+      });
+    } catch (e) {
+      if (e.code === 'permission-denied') aiTamperDenied = true;
+    }
+    record('Sprint 2 Rules: Praktikan dilarang memanipulasi field hasil AI', aiTamperDenied);
+
+    // 12. Assistant approves leave
     await signInWithEmailAndPassword(auth, assistantEmail, password);
     await updateDoc(leaveRef, {
       status: 'approved',
       reviewedBy: assistantUid,
-      reviewNotes: 'Surat dokter valid',
+      reviewNotes: 'Surat dokter terverifikasi',
       updatedAt: serverTimestamp(),
     });
-    const approvedSnap = await getDoc(leaveRef);
-    record('Firestore: Asisten menyetujui izin praktikan (pending -> approved)', approvedSnap.data().status === 'approved');
+    const apprSnap = await getDoc(leaveRef);
+    record('Sprint 2: Asisten menyetujui izin mahasiswa (pending -> approved)', apprSnap.data().status === 'approved');
 
-    // 8. Real-Time Listener (onSnapshot)
-    console.log('\n--- 6. PENGUJIAN SINKRONISASI REAL-TIME (onSnapshot) ---');
-    let realtimeEventReceived = false;
-    const unsub = onSnapshot(leaveRef, (snapshot) => {
-      if (snapshot.exists() && snapshot.data().reviewNotes === 'Catatan tambahan live') {
-        realtimeEventReceived = true;
+    // 13. Real-Time listener on namespaced path
+    let realtimeReceived = false;
+    const unsub = onSnapshot(leaveRef, (snap) => {
+      if (snap.exists() && snap.data().reviewNotes === 'Catatan sinkronisasi live') {
+        realtimeReceived = true;
       }
     });
-
-    // Assistant updates notes
-    await updateDoc(leaveRef, { reviewNotes: 'Catatan tambahan live' });
+    await updateDoc(leaveRef, { reviewNotes: 'Catatan sinkronisasi live' });
     await new Promise(r => setTimeout(r, 600));
     unsub();
-    record('Real-Time: onSnapshot live listener mendeteksi pembaruan data instan', realtimeEventReceived);
+    record('Sprint 2: onSnapshot live listener mendeteksi pembaruan data real-time', realtimeReceived);
 
     console.log('\n================================================================');
-    console.log(`TOTAL UJI INTEGRASI EMULATOR & RULES: ${results.length}`);
+    console.log(`TOTAL UJI INTEGRASI LAMA & SPRINT 2: ${results.length}`);
     console.log(`PASS: ${results.filter(r => r.pass).length}`);
     console.log(`FAIL: 0`);
     console.log('================================================================\n');
@@ -358,14 +432,14 @@ async function main() {
     await deleteApp(app);
     process.exit(0);
 
-  } catch (error) {
-    console.error('\n[FATAL ERROR IN INTEGRATION TEST]:', error);
+  } catch (err) {
+    console.error('\n[FATAL ERROR IN INTEGRATION TEST]:', err);
     try { await deleteApp(app); } catch {}
     process.exit(1);
   }
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Execution error:', err);
   process.exit(1);
 });

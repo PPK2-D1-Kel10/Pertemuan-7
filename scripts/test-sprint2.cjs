@@ -297,7 +297,7 @@ async function runAllTests() {
     assert.ok(rules.includes("request.resource.data.role == 'praktikan'"));
     assert.ok(rules.includes("attendanceId == request.resource.data.sessionId + '_' + request.auth.uid"));
     assert.ok(rules.includes("leaveId == request.resource.data.sessionId + '_' + request.auth.uid"));
-    assert.ok(rules.includes("isAssistant()"));
+    assert.ok(rules.includes("isSprint2Assistant()") || rules.includes("isAssistant()"));
   });
 
   console.log('\n================================================================');

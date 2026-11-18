@@ -7,8 +7,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useDemo } from '@/context/DemoContext';
 import { subscribeSessions } from '@/services/sessionService';
 import { subscribeAssistantLeaveRequests } from '@/services/leaveService';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { onSnapshot } from 'firebase/firestore';
+import { getSprint2Collection } from '@/services/firestorePaths';
 import { ds } from '@/styles/dashboard';
 import type { AttendanceRecord, LeaveRequest, PracticumSession } from '@/types';
 import { getSessionStatusLabel } from '@/types';
@@ -51,7 +51,7 @@ export default function AttendanceRecapScreen() {
 
   // Subscribe to all attendance records in real-time
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'attendance'), (snapshot) => {
+    const unsub = onSnapshot(getSprint2Collection('attendance'), (snapshot) => {
       const list: AttendanceRecord[] = snapshot.docs.map((dSnap) => {
         const d = dSnap.data();
         return {

@@ -1,5 +1,4 @@
 import {
-  collection,
   doc,
   getDocs,
   setDoc,
@@ -11,7 +10,7 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { getSprint2Collection, getSprint2Doc } from '@/services/firestorePaths';
 import type { PracticumClass, ClassEnrollment } from '@/types';
 
 export async function createClass(data: {
@@ -24,7 +23,7 @@ export async function createClass(data: {
     throw new Error('Nama kelas dan nama praktikum wajib diisi.');
   }
 
-  const classRef = doc(collection(db, 'classes'));
+  const classRef = doc(getSprint2Collection('classes'));
   await setDoc(classRef, {
     name: data.name.trim(),
     practicumName: data.practicumName.trim(),
@@ -45,7 +44,7 @@ export async function updateClass(
     throw new Error('Nama kelas dan nama praktikum wajib diisi.');
   }
 
-  const classRef = doc(db, 'classes', classId);
+  const classRef = getSprint2Doc('classes', classId);
   await updateDoc(classRef, {
     name: data.name.trim(),
     practicumName: data.practicumName.trim(),
@@ -55,13 +54,13 @@ export async function updateClass(
 
 export async function deleteClass(classId: string): Promise<void> {
   // Safe delete: Check if sessions exist for this class
-  const sessionsQuery = query(collection(db, 'sessions'), where('classId', '==', classId));
+  const sessionsQuery = query(getSprint2Collection('sessions'), where('classId', '==', classId));
   const sessionsSnap = await getDocs(sessionsQuery);
   if (!sessionsSnap.empty) {
     throw new Error('Kelas tidak dapat dihapus karena masih memiliki sesi praktikum.');
   }
 
-  await deleteDoc(doc(db, 'classes', classId));
+  await deleteDoc(getSprint2Doc('classes', classId));
 }
 
 export async function enrollStudent(
@@ -71,7 +70,7 @@ export async function enrollStudent(
   studentEmail: string
 ): Promise<void> {
   const enrollmentId = `${classId}_${studentUid}`;
-  const enrollmentRef = doc(db, 'enrollments', enrollmentId);
+  const enrollmentRef = getSprint2Doc('enrollments', enrollmentId);
   await setDoc(enrollmentRef, {
     classId,
     studentUid,
@@ -86,7 +85,7 @@ export function subscribeClasses(
   assistantUid?: string,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const classesCol = collection(db, 'classes');
+  const classesCol = getSprint2Collection('classes');
   const q = assistantUid
     ? query(classesCol, where('assistantUid', '==', assistantUid))
     : classesCol;
@@ -119,7 +118,7 @@ export function subscribeStudentEnrollments(
   callback: (enrollments: ClassEnrollment[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, 'enrollments'), where('studentUid', '==', studentUid));
+  const q = query(getSprint2Collection('enrollments'), where('studentUid', '==', studentUid));
   return onSnapshot(
     q,
     (snapshot) => {
@@ -147,7 +146,7 @@ export function subscribeClassStudents(
   callback: (students: ClassEnrollment[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, 'enrollments'), where('classId', '==', classId));
+  const q = query(getSprint2Collection('enrollments'), where('classId', '==', classId));
   return onSnapshot(
     q,
     (snapshot) => {

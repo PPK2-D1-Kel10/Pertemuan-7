@@ -1,6 +1,4 @@
 import {
-  collection,
-  doc,
   runTransaction,
   query,
   where,
@@ -9,6 +7,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
+import { getSprint2Collection, getSprint2Doc } from '@/services/firestorePaths';
 import type { AttendanceRecord, SessionRecap } from '@/types';
 import { formatAttendanceTime } from '@/utils/attendanceValidation';
 
@@ -26,9 +25,9 @@ export async function recordAttendance(params: {
   }
 
   const attendanceDocId = `${sessionId}_${studentUid}`;
-  const attendanceRef = doc(db, 'attendance', attendanceDocId);
-  const sessionRef = doc(db, 'sessions', sessionId);
-  const leaveRef = doc(db, 'leaveRequests', attendanceDocId);
+  const attendanceRef = getSprint2Doc('attendance', attendanceDocId);
+  const sessionRef = getSprint2Doc('sessions', sessionId);
+  const leaveRef = getSprint2Doc('leaveRequests', attendanceDocId);
 
   // Atomic transaction to ensure anti-duplicate, session status check, and conflict prevention
   const resultTime = await runTransaction(db, async (transaction) => {
@@ -96,7 +95,7 @@ export function subscribeSessionAttendance(
   callback: (records: AttendanceRecord[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, 'attendance'), where('sessionId', '==', sessionId));
+  const q = query(getSprint2Collection('attendance'), where('sessionId', '==', sessionId));
   return onSnapshot(
     q,
     (snapshot) => {
@@ -126,12 +125,12 @@ export function subscribeStudentAttendance(
   callback: (records: AttendanceRecord[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, 'attendance'), where('studentUid', '==', studentUid));
+  const q = query(getSprint2Collection('attendance'), where('studentUid', '==', studentUid));
   return onSnapshot(
     q,
     (snapshot) => {
       const list: AttendanceRecord[] = snapshot.docs.map((dSnap) => {
-        const d = dSnap.data();
+        const d = dSnap.data() as any;
         return {
           id: dSnap.id,
           sessionId: d.sessionId || '',

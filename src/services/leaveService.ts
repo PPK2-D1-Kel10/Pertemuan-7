@@ -1,6 +1,4 @@
 import {
-  collection,
-  doc,
   getDoc,
   setDoc,
   updateDoc,
@@ -10,7 +8,7 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { getSprint2Collection, getSprint2Doc } from '@/services/firestorePaths';
 import type { LeaveRequest, LeaveStatus } from '@/types';
 import { classifyLeaveReason } from '@/services/aiService';
 
@@ -42,8 +40,8 @@ export async function submitLeaveRequest(params: {
   }
 
   const leaveDocId = `${sessionId}_${studentUid}`;
-  const leaveRef = doc(db, 'leaveRequests', leaveDocId);
-  const attendanceRef = doc(db, 'attendance', leaveDocId);
+  const leaveRef = getSprint2Doc('leaveRequests', leaveDocId);
+  const attendanceRef = getSprint2Doc('attendance', leaveDocId);
 
   // 1. Conflict prevention: Check if attendance already exists
   const attendanceSnap = await getDoc(attendanceRef);
@@ -123,7 +121,7 @@ export async function reviewLeaveRequest(params: {
 }): Promise<void> {
   const { leaveId, assistantUid, decision, notes } = params;
 
-  const leaveRef = doc(db, 'leaveRequests', leaveId);
+  const leaveRef = getSprint2Doc('leaveRequests', leaveId);
   const leaveSnap = await getDoc(leaveRef);
   if (!leaveSnap.exists()) {
     throw new Error('Pengajuan izin tidak ditemukan.');
@@ -142,7 +140,7 @@ export function subscribeStudentLeaveRequests(
   callback: (requests: LeaveRequest[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, 'leaveRequests'), where('studentUid', '==', studentUid));
+  const q = query(getSprint2Collection('leaveRequests'), where('studentUid', '==', studentUid));
   return onSnapshot(
     q,
     (snapshot) => {
@@ -185,7 +183,7 @@ export function subscribeAssistantLeaveRequests(
   classId?: string,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const colRef = collection(db, 'leaveRequests');
+  const colRef = getSprint2Collection('leaveRequests');
   const q = classId ? query(colRef, where('classId', '==', classId)) : colRef;
 
   return onSnapshot(
@@ -230,7 +228,7 @@ export function subscribeSessionLeaveRequests(
   callback: (requests: LeaveRequest[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, 'leaveRequests'), where('sessionId', '==', sessionId));
+  const q = query(getSprint2Collection('leaveRequests'), where('sessionId', '==', sessionId));
   return onSnapshot(
     q,
     (snapshot) => {

@@ -66,7 +66,7 @@ async function seed() {
   ];
 
   for (const user of users) {
-    await setDoc(doc(db, 'users', user.uid), user);
+    await setDoc(doc(db, 'sprint2Data', 'app', 'users', user.uid), user);
     console.log(`[Users] Berhasil mendaftarkan ${user.name} (${user.role})`);
   }
 
@@ -93,7 +93,7 @@ async function seed() {
   ];
 
   for (const cls of classes) {
-    await setDoc(doc(db, 'classes', cls.id), cls);
+    await setDoc(doc(db, 'sprint2Data', 'app', 'classes', cls.id), cls);
     console.log(`[Classes] Berhasil membuat ${cls.practicumName} - ${cls.name}`);
   }
 
@@ -144,7 +144,7 @@ async function seed() {
   ];
 
   for (const session of sessions) {
-    await setDoc(doc(db, 'sessions', session.id), session);
+    await setDoc(doc(db, 'sprint2Data', 'app', 'sessions', session.id), session);
     console.log(`[Sessions] Berhasil membuat ${session.id} (Status: ${session.status})`);
   }
 
@@ -164,7 +164,7 @@ async function seed() {
   ];
 
   for (const att of attendances) {
-    await setDoc(doc(db, 'attendance', att.id), att);
+    await setDoc(doc(db, 'sprint2Data', 'app', 'attendance', att.id), att);
     console.log(`[Attendance] Berhasil mencatat presensi ${att.id}`);
   }
 
@@ -191,7 +191,7 @@ async function seed() {
   ];
 
   for (const leave of leaveRequests) {
-    await setDoc(doc(db, 'leaveRequests', leave.id), leave);
+    await setDoc(doc(db, 'sprint2Data', 'app', 'leaveRequests', leave.id), leave);
     console.log(`[Leave] Berhasil mencatat izin ${leave.id}`);
   }
 
