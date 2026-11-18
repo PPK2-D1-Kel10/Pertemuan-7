@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny: All access forbidden unless explicitly permitted
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ================= HELPER FUNCTIONS =================
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isAssistant() {
+      return isAuthenticated() && 
+        (getUserData(request.auth.uid).role == 'asisten' || getUserData(request.auth.uid).role == 'Asisten');
+    }
+
+    function isStudent() {
+      return isAuthenticated() && 
+        (getUserData(request.auth.uid).role == 'praktikan' || getUserData(request.auth.uid).role == 'Praktikan');
+    }
+
+    // ================= 1. USERS COLLECTION =================
+    match /users/{uid} {
+      // Authenticated users can view user profiles
+      allow read: if isAuthenticated();
+
+      // TC-01 & TC-06: Public registration strictly creates role 'praktikan'
+      // Requester UID must match document UID.
+      allow create: if isAuthenticated() &&
+        request.auth.uid == uid &&
+        request.resource.data.uid == uid &&
+        (request.resource.data.role == 'praktikan' || request.resource.data.role == 'Praktikan');
+
+      // TC-06: Students cannot elevate their own role to 'asisten'
+      allow update: if isAuthenticated() &&
+        request.auth.uid == uid &&
+        (
+          request.resource.data.role == resource.data.role ||
+          isAssistant()
+        );
+
+      allow delete: if false;
+    }
+
+    // ================= 2. CLASSES COLLECTION =================
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+
+      // Only assistants can manage practicum classes
+      allow create: if isAssistant() && request.resource.data.assistantUid == request.auth.uid;
+      allow update: if isAssistant() && resource.data.assistantUid == request.auth.uid;
+      allow delete: if isAssistant() && resource.data.assistantUid == request.auth.uid;
+    }
+
+    // ================= 3. ENROLLMENTS COLLECTION =================
+    match /enrollments/{enrollmentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAssistant();
+    }
+
+    // ================= 4. SESSIONS COLLECTION =================
+    match /sessions/{sessionId} {
+      allow read: if isAuthenticated();
+
+      // TC-07, TC-08, TC-29: Only assistants can create, edit, or control sessions
+      allow create: if isAssistant() && request.resource.data.assistantUid == request.auth.uid;
+      allow update: if isAssistant() && resource.data.assistantUid == request.auth.uid;
+      allow delete: if isAssistant() && resource.data.assistantUid == request.auth.uid;
+    }
+
+    // ================= 5. ATTENDANCE COLLECTION =================
+    // Deterministic Document ID: ${sessionId}_${studentUid}
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated();
+
+      // TC-12, TC-13, TC-14:
+      // - Authenticated
+      // - studentUid matches requester's UID (cannot spoof UID)
+      // - Deterministic ID matches sessionId_studentUid
+      // - Session status must be 'open' (cannot attend closed/scheduled sessions)
+      allow create: if isAuthenticated() &&
+        request.resource.data.studentUid == request.auth.uid &&
+        attendanceId == request.resource.data.sessionId + '_' + request.auth.uid &&
+        get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data.status in ['open', 'Berlangsung'];
+
+      // Attendance records are immutable once confirmed
+      allow update, delete: if false;
+    }
+
+    // ================= 6. LEAVE REQUESTS COLLECTION =================
+    // Deterministic Document ID: ${sessionId}_${studentUid}
+    match /leaveRequests/{leaveId} {
+      allow read: if isAuthenticated();
+
+      // TC-17, TC-18:
+      // - Student can submit leave for their own UID with status 'pending'
+      // - Deterministic ID prevents duplicate leave submissions
+      allow create: if isAuthenticated() &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        leaveId == request.resource.data.sessionId + '_' + request.auth.uid;
+
+      // TC-21, TC-22, TC-24:
+      // - Praktikan CANNOT approve/reject their own leave
+      // - Decision updates strictly restricted to assistants or AI field updates
+      allow update: if isAuthenticated() && (
+        isAssistant() ||
+        (
+          request.auth.uid == resource.data.studentUid &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'pending'
+        )
+      );
+
+      allow delete: if isAssistant();
+    }
+  }
+}
