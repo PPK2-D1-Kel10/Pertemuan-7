@@ -25,6 +25,9 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*-debug.log
+firebase-debug.log
+firestore-debug.log
 
 # macOS
 .DS_Store
@@ -32,6 +35,10 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.config/
+*.local
+.demo-credentials.local
 
 # typescript
 *.tsbuildinfo
