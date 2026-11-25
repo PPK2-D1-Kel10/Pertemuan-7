@@ -71,8 +71,13 @@ const ALLOWED_CATEGORIES = [
 
 const PREFERRED_MODELS = [
   ...(PREFERRED_GEMINI_MODEL ? [PREFERRED_GEMINI_MODEL] : []),
-  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-flash-latest',
   'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
   'gemini-2.0-flash-lite',
   'gemini-2.0-flash',
 ];
@@ -161,7 +166,7 @@ async function verifyGeminiFreeTierModel(forceRefresh = false) {
   }
 
   const now = Date.now();
-  if (!forceRefresh && geminiState.checkedAt && now - geminiState.checkedAt < 60000 && geminiState.geminiConnected) {
+  if (!forceRefresh && geminiState.checkedAt && now - geminiState.checkedAt < 600000 && geminiState.geminiConnected) {
     return geminiState;
   }
 
@@ -183,23 +188,41 @@ async function verifyGeminiFreeTierModel(forceRefresh = false) {
           Array.isArray(m.supportedGenerationMethods) &&
           m.supportedGenerationMethods.includes('generateContent') &&
           typeof m.name === 'string' &&
-          m.name.toLowerCase().includes('flash')
+          m.name.toLowerCase().includes('flash') &&
+          !/-(tts|image)|omni/i.test(m.name)
       )
       .map((m) => m.name.replace(/^models\//, ''));
 
+    const orderedCandidates = [
+      ...PREFERRED_MODELS.filter((pref) => flashCandidates.includes(pref)),
+      ...flashCandidates.filter((c) => !PREFERRED_MODELS.includes(c)),
+    ];
+
     let chosen = null;
-    for (const pref of PREFERRED_MODELS) {
-      if (flashCandidates.includes(pref)) {
-        chosen = pref;
+    let lastProbeErr = '';
+    for (const candidate of orderedCandidates.slice(0, 5)) {
+      const probeResp = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'OK' }] }],
+            generationConfig: { maxOutputTokens: 5 },
+          }),
+        },
+        8000
+      );
+      if (probeResp.ok) {
+        chosen = candidate;
         break;
       }
-    }
-    if (!chosen && flashCandidates.length) {
-      chosen = flashCandidates[0];
+      const errJson = await probeResp.json().catch(() => ({}));
+      lastProbeErr = errJson?.error?.message || `HTTP ${probeResp.status}`;
     }
 
     if (!chosen) {
-      throw new Error('Tidak ditemukan model Gemini Flash / Flash-Lite yang mendukung generateContent.');
+      throw new Error(lastProbeErr || 'Tidak ditemukan model Gemini Flash / Flash-Lite aktif pada akun Free Tier ini.');
     }
 
     geminiState = {
