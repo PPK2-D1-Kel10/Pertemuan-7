@@ -173,6 +173,7 @@ export function subscribeStudentLeaveRequests(
       callback(list);
     },
     (error) => {
+      console.warn('leaveService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );
@@ -218,6 +219,7 @@ export function subscribeAssistantLeaveRequests(
       callback(list);
     },
     (error) => {
+      console.warn('leaveService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );
@@ -259,6 +261,7 @@ export function subscribeSessionLeaveRequests(
       callback(list);
     },
     (error) => {
+      console.warn('leaveService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );

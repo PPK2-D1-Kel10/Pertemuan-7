@@ -35,14 +35,15 @@ export default function LeaveScreen() {
 
   // Subscribe to sessions for student dropdown
   useEffect(() => {
+    if (!user) return;
     const unsub = subscribeSessions((list) => {
       setSessions(list);
-      if (list.length && !selectedSessionId) {
-        setSelectedSessionId(list[0].id);
+      if (list.length) {
+        setSelectedSessionId((prev) => prev || list[0].id);
       }
     });
     return () => unsub();
-  }, [selectedSessionId]);
+  }, [user]);
 
   // Subscribe to student's leave requests
   useEffect(() => {
@@ -55,12 +56,12 @@ export default function LeaveScreen() {
 
   // Subscribe to all leave requests for assistant
   useEffect(() => {
-    if (!isAssistant) return;
+    if (!user || !isAssistant) return;
     const unsub = subscribeAssistantLeaveRequests((list) => {
       setAssistantLeaveList(list);
     });
     return () => unsub();
-  }, [isAssistant]);
+  }, [user, isAssistant]);
 
   // Submit leave request (Praktikan)
   const handleSubmit = async () => {

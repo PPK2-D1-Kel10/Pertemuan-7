@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { EmptyState, Screen, SessionCard } from '@/components/UI';
+import { useAuth } from '@/context/AuthContext';
 import { useDemo } from '@/context/DemoContext';
 import { subscribeSessions } from '@/services/sessionService';
 import { ds } from '@/styles/dashboard';
@@ -11,11 +12,13 @@ import { getSessionStatusLabel } from '@/types';
 const filters = ['Semua', 'Belum Dibuka', 'Berlangsung', 'Selesai'] as const;
 
 export default function ScheduleScreen() {
+  const { user } = useAuth();
   const { state: demoState } = useDemo();
   const [sessions, setSessions] = useState<PracticumSession[]>([]);
   const [filter, setFilter] = useState<(typeof filters)[number]>('Semua');
 
   useEffect(() => {
+    if (!user) return;
     const unsub = subscribeSessions((liveList) => {
       if (liveList.length) {
         setSessions(liveList);
@@ -38,7 +41,7 @@ export default function ScheduleScreen() {
       }
     });
     return () => unsub();
-  }, [demoState.sessions]);
+  }, [user, demoState.sessions]);
 
   const filteredSessions = sessions.filter((session) => {
     if (filter === 'Semua') return true;

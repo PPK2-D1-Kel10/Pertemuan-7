@@ -24,8 +24,11 @@ export default function AttendanceRecapScreen() {
 
   const selectedId = Array.isArray(id) ? id[0] : id;
 
+  const assistant = user ? isAssistant : demoState.role === 'Asisten';
+
   // Subscribe to live sessions
   useEffect(() => {
+    if (!user || !assistant) return;
     const unsub = subscribeSessions((list) => {
       if (list.length) {
         setSessions(list);
@@ -47,10 +50,11 @@ export default function AttendanceRecapScreen() {
       }
     });
     return () => unsub();
-  }, [demoState.sessions]);
+  }, [user, assistant, demoState.sessions]);
 
   // Subscribe to all attendance records in real-time
   useEffect(() => {
+    if (!user || !assistant) return;
     const unsub = onSnapshot(getSprint2Collection('attendance'), (snapshot) => {
       const list: AttendanceRecord[] = snapshot.docs.map((dSnap) => {
         const d = dSnap.data();
@@ -70,22 +74,22 @@ export default function AttendanceRecapScreen() {
       } else {
         setAttendanceList(demoState.attendance as AttendanceRecord[]);
       }
-    }, () => {
+    }, (err) => {
+      console.warn('Attendance recap snapshot error:', err?.message);
       setAttendanceList(demoState.attendance as AttendanceRecord[]);
     });
 
     return () => unsub();
-  }, [demoState.attendance]);
+  }, [user, assistant, demoState.attendance]);
 
   // Subscribe to leave requests
   useEffect(() => {
+    if (!user || !assistant) return;
     const unsub = subscribeAssistantLeaveRequests((list) => {
       setLeaveList(list);
     });
     return () => unsub();
-  }, []);
-
-  const assistant = user ? isAssistant : demoState.role === 'Asisten';
+  }, [user, assistant]);
 
   if (!assistant) {
     return (

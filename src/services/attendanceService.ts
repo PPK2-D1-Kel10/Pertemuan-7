@@ -115,6 +115,7 @@ export function subscribeSessionAttendance(
       callback(list);
     },
     (error) => {
+      console.warn('attendanceService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );
@@ -145,6 +146,7 @@ export function subscribeStudentAttendance(
       callback(list);
     },
     (error) => {
+      console.warn('attendanceService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );

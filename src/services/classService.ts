@@ -108,6 +108,7 @@ export function subscribeClasses(
       callback(list);
     },
     (error) => {
+      console.warn('classService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );
@@ -136,6 +137,7 @@ export function subscribeStudentEnrollments(
       callback(list);
     },
     (error) => {
+      console.warn('classService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );
@@ -164,6 +166,7 @@ export function subscribeClassStudents(
       callback(list);
     },
     (error) => {
+      console.warn('classService snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );

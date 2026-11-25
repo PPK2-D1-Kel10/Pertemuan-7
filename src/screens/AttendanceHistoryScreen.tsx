@@ -21,6 +21,7 @@ export default function AttendanceHistoryScreen() {
 
   // Subscribe to live sessions
   useEffect(() => {
+    if (!user) return;
     const unsub = subscribeSessions((list) => {
       if (list.length) {
         setSessions(list);
@@ -42,7 +43,7 @@ export default function AttendanceHistoryScreen() {
       }
     });
     return () => unsub();
-  }, [demoState.sessions]);
+  }, [user, demoState.sessions]);
 
   // Subscribe to student's live attendance
   useEffect(() => {

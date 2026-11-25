@@ -26,6 +26,7 @@ export default function HomeScreen() {
 
   // Subscribe to live sessions
   useEffect(() => {
+    if (!user) return;
     const unsub = subscribeSessions((list) => {
       if (list.length) {
         setSessions(list);
@@ -47,14 +48,14 @@ export default function HomeScreen() {
       }
     });
     return () => unsub();
-  }, [demoState.sessions]);
+  }, [user, demoState.sessions]);
 
   // Subscribe to live classes (assistant)
   useEffect(() => {
-    if (!assistant) return;
+    if (!user || !assistant) return;
     const unsub = subscribeClasses((list) => setClasses(list));
     return () => unsub();
-  }, [assistant]);
+  }, [user, assistant]);
 
   // Subscribe to student attendance
   useEffect(() => {
@@ -65,10 +66,11 @@ export default function HomeScreen() {
 
   // Subscribe to leave requests
   useEffect(() => {
+    if (!user) return;
     if (assistant) {
       const unsub = subscribeAssistantLeaveRequests((list) => setLeaveRequests(list));
       return () => unsub();
-    } else if (user) {
+    } else {
       const unsub = subscribeStudentLeaveRequests(user.uid, (list) => setLeaveRequests(list));
       return () => unsub();
     }

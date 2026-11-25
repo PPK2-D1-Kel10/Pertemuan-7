@@ -25,7 +25,7 @@ export default function ClassesScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isAssistant) {
+    if (!user || !isAssistant) {
       return;
     }
 
@@ -42,7 +42,7 @@ export default function ClassesScreen() {
     );
 
     return () => unsubscribe();
-  }, [isAssistant]);
+  }, [user, isAssistant]);
 
   const handleAddClass = async () => {
     if (!classNameInput.trim() || !practicumNameInput.trim()) {

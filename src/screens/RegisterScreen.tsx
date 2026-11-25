@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,6 +15,7 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [visible, setVisible] = useState(false);
   const [localError, setLocalError] = useState('');
+  const isNavigatingRef = useRef(false);
 
   const handleRegister = async () => {
     setLocalError('');
@@ -40,7 +41,10 @@ export default function RegisterScreen() {
 
     try {
       await register(name.trim(), email.trim(), password, confirmPassword);
-      router.replace('/home');
+      if (!isNavigatingRef.current) {
+        isNavigatingRef.current = true;
+        router.replace('/home');
+      }
     } catch (err: any) {
       setLocalError(err.message || 'Gagal mendaftar. Silakan coba lagi.');
     }

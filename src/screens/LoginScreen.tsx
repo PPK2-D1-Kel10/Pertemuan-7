@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,10 +15,12 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
   const [localError, setLocalError] = useState('');
+  const isNavigatingRef = useRef(false);
 
   // Bypass login if session is already active (persistence)
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (isAuthenticated && user && !isNavigatingRef.current) {
+      isNavigatingRef.current = true;
       router.replace('/home');
     }
   }, [isAuthenticated, user]);
@@ -36,7 +38,10 @@ export default function LoginScreen() {
       await login(email.trim(), password);
       // Synchronize with demo state for fallback compatibility
       demoDispatch({ type: 'login', username: email.trim().split('@')[0] });
-      router.replace('/home');
+      if (!isNavigatingRef.current) {
+        isNavigatingRef.current = true;
+        router.replace('/home');
+      }
     } catch (err: any) {
       // Error is mapped to user-friendly Indonesian by authService & AuthContext
       setLocalError(err.message || 'Gagal masuk. Periksa kembali email dan kata sandi.');
@@ -134,25 +139,19 @@ export default function LoginScreen() {
 
             {/* Quick Demo Credentials Helper */}
             <View style={{ gap: 8, marginTop: 4 }}>
-              <Text style={[ds.loginHint, { fontWeight: '700' }]}>Pilihan Akun Demo Cepat:</Text>
+              <Text style={[ds.loginHint, { fontWeight: '700' }]}>Pilihan Akun Demo ZerovaApp:</Text>
               <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
                 <Pressable
-                  onPress={() => setPreset('asisten@praktiku.ac.id', 'password123')}
+                  onPress={() => setPreset('asisten.demo@praktiku.undip.ac.id', '')}
                   style={{ backgroundColor: 'rgba(255,255,255,0.18)', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12 }}
                 >
-                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }}>Asisten Demo</Text>
+                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }}>Asisten Cloud</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => setPreset('praktikan1@praktiku.ac.id', 'password123')}
+                  onPress={() => setPreset('praktikan.demo@praktiku.undip.ac.id', '')}
                   style={{ backgroundColor: 'rgba(255,255,255,0.18)', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12 }}
                 >
-                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }}>Praktikan 1</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setPreset('praktikan2@praktiku.ac.id', 'password123')}
-                  style={{ backgroundColor: 'rgba(255,255,255,0.18)', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12 }}
-                >
-                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }}>Praktikan 2</Text>
+                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }}>Praktikan Cloud</Text>
                 </Pressable>
               </View>
             </View>

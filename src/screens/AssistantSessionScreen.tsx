@@ -38,24 +38,24 @@ export default function AssistantSessionScreen() {
 
   // Subscribe to live sessions
   useEffect(() => {
-    if (!isAssistant) return;
+    if (!user || !isAssistant) return;
     const unsub = subscribeSessions((list) => {
       setSessions(list);
     });
     return () => unsub();
-  }, [isAssistant]);
+  }, [user, isAssistant]);
 
   // Subscribe to live classes
   useEffect(() => {
-    if (!isAssistant) return;
+    if (!user || !isAssistant) return;
     const unsub = subscribeClasses((list) => {
       setClasses(list);
-      if (list.length && !selectedClassId) {
-        setSelectedClassId(list[0].id);
+      if (list.length) {
+        setSelectedClassId((prev) => prev || list[0].id);
       }
     });
     return () => unsub();
-  }, [isAssistant, selectedClassId]);
+  }, [user, isAssistant]);
 
   const handleCreateSession = async () => {
     if (!selectedClassId || !sessionDate || !startTime || !endTime) {

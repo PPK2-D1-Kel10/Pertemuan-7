@@ -37,38 +37,52 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     let unsubscribeProfile: Unsubscribe | null = null;
 
     // Listen to Firebase Auth state
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      // Clean up previous profile listener
-      if (unsubscribeProfile) {
-        unsubscribeProfile();
-        unsubscribeProfile = null;
-      }
+    const unsubscribeAuth = onAuthStateChanged(
+      auth,
+      (firebaseUser) => {
+        if (!active) return;
 
-      if (firebaseUser) {
-        setUser(firebaseUser);
-        // Subscribe to real-time updates of the user profile document in Firestore
-        unsubscribeProfile = subscribeUserProfile(
-          firebaseUser.uid,
-          (liveProfile) => {
-            setProfile(liveProfile);
-            setLoading(false);
-          },
-          (err) => {
-            console.warn('Profile sync error:', err.message);
-            setLoading(false);
-          }
-        );
-      } else {
-        setUser(null);
-        setProfile(null);
+        // Clean up previous profile listener
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+          unsubscribeProfile = null;
+        }
+
+        if (firebaseUser) {
+          setUser(firebaseUser);
+          // Subscribe to real-time updates of the user profile document in Firestore
+          unsubscribeProfile = subscribeUserProfile(
+            firebaseUser.uid,
+            (liveProfile) => {
+              if (!active) return;
+              setProfile(liveProfile);
+              setLoading(false);
+            },
+            (err) => {
+              if (!active) return;
+              console.warn('Profile sync error:', err.message);
+              setLoading(false);
+            }
+          );
+        } else {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+        }
+      },
+      (err) => {
+        if (!active) return;
+        console.warn('Auth state error:', err.message);
         setLoading(false);
       }
-    });
+    );
 
     return () => {
+      active = false;
       if (unsubscribeProfile) unsubscribeProfile();
       unsubscribeAuth();
     };
@@ -81,7 +95,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setError(null);
     try {
       const userProfile = await loginUser(email, pass);
+      if (auth.currentUser) {
+        setUser(auth.currentUser);
+      }
       setProfile(userProfile);
+      setLoading(false);
     } catch (err: any) {
       const errorMsg = err?.code ? mapAuthError(err.code) : (err?.message || 'Gagal masuk.');
       setError(errorMsg);
@@ -96,7 +114,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setError(null);
     try {
       const userProfile = await registerUser(name, email, pass, confirm);
+      if (auth.currentUser) {
+        setUser(auth.currentUser);
+      }
       setProfile(userProfile);
+      setLoading(false);
     } catch (err: any) {
       const errorMsg = err?.code ? mapAuthError(err.code) : (err?.message || 'Gagal mendaftar.');
       setError(errorMsg);

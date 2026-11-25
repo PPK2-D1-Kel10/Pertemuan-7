@@ -4,41 +4,133 @@ import {
   getAuth,
   browserLocalPersistence,
   type Auth,
+  type Persistence,
 } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, type Firestore } from 'firebase/firestore';
 
-// Helper to safely get persistence across Web, React Native, and Node environments
-function getStoragePersistence() {
-  if (typeof window !== 'undefined' || typeof document !== 'undefined') {
-    return browserLocalPersistence;
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Platform } = require('react-native');
-    if (Platform && Platform.OS === 'web') {
-      return browserLocalPersistence;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getReactNativePersistence } = require('firebase/auth');
-    if (typeof getReactNativePersistence === 'function' && AsyncStorage) {
-      return getReactNativePersistence(AsyncStorage);
-    }
-  } catch {
-    // fallback for environments without react-native bindings
-  }
-  return browserLocalPersistence;
+// Safely resolve React Native Platform and AsyncStorage across Hermes and Node environments
+let Platform: any = null;
+let AsyncStorage: any = null;
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const RN = require('react-native');
+  Platform = RN ? RN.Platform : null;
+} catch {
+  Platform = { OS: 'node' };
 }
 
-// Config with environment variables or default demo configuration
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+} catch {
+  AsyncStorage = null;
+}
+
+// In-Memory fallback storage for environments where AsyncStorage is unavailable
+const memoryStorageMap = new Map<string, string>();
+const inMemoryStorage = {
+  async setItem(key: string, value: string): Promise<void> {
+    memoryStorageMap.set(key, value);
+  },
+  async getItem(key: string): Promise<string | null> {
+    return memoryStorageMap.get(key) ?? null;
+  },
+  async removeItem(key: string): Promise<void> {
+    memoryStorageMap.delete(key);
+  },
+};
+
+// Robust React Native Persistence adapter conforming to the Firebase Auth Persistence protocol
+function createReactNativePersistenceClass(storage: any): Persistence {
+  const Cls = class {
+    type = 'LOCAL';
+    async _isAvailable() {
+      try {
+        if (!storage) return false;
+        await storage.setItem('firebase:auth:storage_available', '1');
+        await storage.removeItem('firebase:auth:storage_available');
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    async _set(key: string, value: any) {
+      try {
+        await storage.setItem(key, JSON.stringify(value));
+      } catch (err) {
+        console.warn('Firebase Auth AsyncStorage write warning:', err);
+      }
+    }
+    async _get(key: string) {
+      try {
+        const json = await storage.getItem(key);
+        return json ? JSON.parse(json) : null;
+      } catch (err) {
+        console.warn('Firebase Auth AsyncStorage read warning:', err);
+        return null;
+      }
+    }
+    async _remove(key: string) {
+      try {
+        await storage.removeItem(key);
+      } catch (err) {
+        console.warn('Firebase Auth AsyncStorage remove warning:', err);
+      }
+    }
+    _addListener(_key: any, _listener: any) {
+      return;
+    }
+    _removeListener(_key: any, _listener: any) {
+      return;
+    }
+  };
+  (Cls as any).type = 'LOCAL';
+  return Cls as unknown as Persistence;
+}
+
+// Safely resolve persistence: Web -> browserLocalPersistence, Mobile -> AsyncStorage adapter
+function getStoragePersistence(): Persistence {
+  // 1. Node.js environment (automated test runners)
+  if (Platform && Platform.OS === 'node') {
+    return createReactNativePersistenceClass(inMemoryStorage);
+  }
+
+  // 2. Web environment
+  if (Platform && Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      return browserLocalPersistence;
+    }
+  }
+
+  // 3. React Native Mobile (Android / iOS)
+  if (Platform && (Platform.OS === 'android' || Platform.OS === 'ios')) {
+    if (AsyncStorage) {
+      return createReactNativePersistenceClass(AsyncStorage);
+    }
+  }
+
+  // 4. Fallback check for browser runtime
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    return browserLocalPersistence;
+  }
+
+  // 5. Default to AsyncStorage or in-memory fallback
+  if (AsyncStorage) {
+    return createReactNativePersistenceClass(AsyncStorage);
+  }
+
+  return createReactNativePersistenceClass(inMemoryStorage);
+}
+
+// Production Firebase Cloud config for ZerovaApp (with env variable override support)
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyDemoProjectKeyForSprint2Attendance',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'praktiku-sprint2.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'praktiku-sprint2',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'praktiku-sprint2.appspot.com',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '123456789012',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:123456789012:web:abcdef1234567890',
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyDB3Eelu_0E1-GBaCet1dUi8SWJmhieCbg',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'zerovaapp.firebaseapp.com',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'zerovaapp',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'zerovaapp.firebasestorage.app',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '262603150759',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:262603150759:android:0fc752373d522fceb39282',
 };
 
 // Singleton initialization
@@ -52,7 +144,8 @@ if (!getApps().length) {
     auth = initializeAuth(app, {
       persistence: getStoragePersistence(),
     });
-  } catch {
+  } catch (err) {
+    console.warn('initializeAuth fallback to getAuth:', err);
     auth = getAuth(app);
   }
 } else {
@@ -60,6 +153,12 @@ if (!getApps().length) {
   auth = getAuth(app);
 }
 
-db = getFirestore(app);
+try {
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch {
+  db = getFirestore(app);
+}
 
 export { app, auth, db, firebaseConfig };

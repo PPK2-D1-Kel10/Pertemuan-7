@@ -168,7 +168,7 @@ export function Screen({
   // Authenticated either through Firebase Auth or fallback Demo state
   const isUserAuthenticated = !!user || !!demoState.username;
 
-  if (authLoading && !isUserAuthenticated) {
+  if (requireRole && authLoading && !isUserAuthenticated) {
     return (
       <View style={[ds.page, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={glassTheme.text} accessibilityLabel="Memuat data" />
@@ -176,7 +176,7 @@ export function Screen({
     );
   }
 
-  if (!isUserAuthenticated) {
+  if (requireRole && !isUserAuthenticated) {
     return <Redirect href="/" />;
   }
 

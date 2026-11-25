@@ -125,6 +125,7 @@ export function subscribeSessions(
       callback(list);
     },
     (error) => {
+      console.warn('subscribeSessions snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );
@@ -160,6 +161,7 @@ export function subscribeSessionDetail(
       });
     },
     (error) => {
+      console.warn('subscribeSessions snapshot error:', error?.message);
       if (onError) onError(error);
     }
   );

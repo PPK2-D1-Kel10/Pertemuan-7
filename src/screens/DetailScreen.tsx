@@ -27,7 +27,7 @@ export default function DetailScreen() {
 
   // Subscribe to live session detail from Firestore
   useEffect(() => {
-    if (!sessionId) return;
+    if (!user || !sessionId) return;
     const unsub = subscribeSessionDetail(sessionId, (liveSession) => {
       if (liveSession) {
         setSession(liveSession);
@@ -52,25 +52,25 @@ export default function DetailScreen() {
       }
     });
     return () => unsub();
-  }, [sessionId, demoState.sessions]);
+  }, [user, sessionId, demoState.sessions]);
 
   // Subscribe to live attendance
   useEffect(() => {
-    if (!sessionId) return;
+    if (!user || !sessionId) return;
     const unsub = subscribeSessionAttendance(sessionId, (list) => {
       setAttendanceRecords(list);
     });
     return () => unsub();
-  }, [sessionId]);
+  }, [user, sessionId]);
 
   // Subscribe to live leave requests
   useEffect(() => {
-    if (!sessionId) return;
+    if (!user || !sessionId) return;
     const unsub = subscribeSessionLeaveRequests(sessionId, (list) => {
       setLeaveRecords(list);
     });
     return () => unsub();
-  }, [sessionId]);
+  }, [user, sessionId]);
 
   const handleOpenSession = async () => {
     if (!session) return;

@@ -23,17 +23,19 @@ export default function StudentAttendanceScreen({ sessionId }: { sessionId: stri
 
   // Subscribe to session detail in real-time
   useEffect(() => {
+    if (!user || !sessionId) return;
     const unsub = subscribeSessionDetail(sessionId, (s) => setSession(s));
     return () => unsub();
-  }, [sessionId]);
+  }, [user, sessionId]);
 
   // Subscribe to attendance records in real-time
   useEffect(() => {
+    if (!user || !sessionId) return;
     const unsub = subscribeSessionAttendance(sessionId, (records) => {
       setAttendanceRecords(records);
     });
     return () => unsub();
-  }, [sessionId]);
+  }, [user, sessionId]);
 
   // Subscribe to student leave status for this session
   useEffect(() => {

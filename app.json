@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ppk2d1kel10.praktikusprint2"
+      "package": "com.ppk2d1kel10.praktikusprint2",
+      "versionCode": 2
     },
     "web": {
       "output": "static",
