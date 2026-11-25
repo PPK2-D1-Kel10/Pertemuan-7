@@ -8,6 +8,7 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
+import { auth } from '@/config/firebase';
 import { getSprint2Collection, getSprint2Doc } from '@/services/firestorePaths';
 import type { LeaveRequest, LeaveStatus } from '@/types';
 import { classifyLeaveReason } from '@/services/aiService';
@@ -90,13 +91,19 @@ export async function submitLeaveRequest(params: {
   // 4. Asynchronously process AI classification (non-blocking)
   void (async () => {
     try {
-      const aiResult = await classifyLeaveReason(reason);
-      await updateDoc(leaveRef, {
-        aiCategory: aiResult.category,
-        aiConfidence: aiResult.confidence,
-        aiExplanation: aiResult.explanation,
-        aiStatus: aiResult.status,
+      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+      const aiResult = await classifyLeaveReason(reason, {
+        leaveId: leaveDocId,
+        idToken,
       });
+      if (!aiResult.persistedByBackend) {
+        await updateDoc(leaveRef, {
+          aiCategory: aiResult.category,
+          aiConfidence: aiResult.confidence,
+          aiExplanation: aiResult.explanation,
+          aiStatus: aiResult.status,
+        });
+      }
     } catch (err: any) {
       console.warn('AI classification async failed:', err.message);
       try {

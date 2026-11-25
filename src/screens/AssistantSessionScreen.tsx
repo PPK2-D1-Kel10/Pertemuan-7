@@ -243,7 +243,7 @@ export default function AssistantSessionScreen() {
                 </Text>
               )}
 
-              <View style={ds.row}>
+              <View style={ds.wrap}>
                 <Button
                   label="Lihat Rekap Kehadiran"
                   variant="secondary"

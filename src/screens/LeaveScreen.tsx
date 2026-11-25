@@ -8,6 +8,7 @@ import {
   subscribeAssistantLeaveRequests,
   subscribeStudentLeaveRequests,
 } from '@/services/leaveService';
+import { checkGeminiBackendHealth, type GeminiBackendHealth } from '@/services/aiService';
 import { subscribeSessions } from '@/services/sessionService';
 import { ds } from '@/styles/dashboard';
 import { glassTheme } from '@/styles/theme';
@@ -32,6 +33,19 @@ export default function LeaveScreen() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [geminiHealth, setGeminiHealth] = useState<GeminiBackendHealth>({ connected: false, model: null });
+
+  // Verify live Gemini proxy health on laptop web (never claims connected unless verified)
+  useEffect(() => {
+    let active = true;
+    if (!user) return;
+    void checkGeminiBackendHealth().then((health) => {
+      if (active) setGeminiHealth(health);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   // Subscribe to sessions for student dropdown
   useEffect(() => {
@@ -135,6 +149,17 @@ export default function LeaveScreen() {
     return <StatusBadge status="Menunggu" />;
   };
 
+  // Helper for honest Gemini status banner
+  const renderGeminiStatusBanner = () => (
+    <View style={[ds.badge, geminiHealth.connected ? ds.liveBadge : ds.pendingBadge]}>
+      <Text style={[ds.badgeText, geminiHealth.connected && ds.liveText]}>
+        {geminiHealth.connected && geminiHealth.model
+          ? `✨ Gemini AI Terhubung (${geminiHealth.model}) — API Alternatif`
+          : '✨ Gemini AI (Alternatif): Belum Terhubung'}
+      </Text>
+    </View>
+  );
+
   // Helper for AI status badge
   const renderAIInfo = (req: LeaveRequest) => {
     if (req.aiStatus === 'pending') {
@@ -148,7 +173,7 @@ export default function LeaveScreen() {
       return (
         <View style={{ gap: 4, marginTop: 4 }}>
           <View style={[ds.badge, ds.pendingBadge]}>
-            <Text style={ds.badgeText}>🤖 AI Pengajar: Belum Terhubung</Text>
+            <Text style={ds.badgeText}>🤖 AI: Simulasi Lokal / Belum Terhubung</Text>
           </View>
           {req.aiCategory ? (
             <Text style={ds.small}>Estimasi Pendukung: {req.aiCategory}</Text>
@@ -164,7 +189,7 @@ export default function LeaveScreen() {
         <View style={{ gap: 4, marginTop: 4 }}>
           <View style={[ds.badge, isSimulated ? ds.pendingBadge : ds.liveBadge]}>
             <Text style={[ds.badgeText, !isSimulated && ds.liveText]}>
-              {isSimulated ? `🤖 ${req.aiCategory}` : `🤖 AI Pengajar: ${req.aiCategory}`} {confPercent ? `(${confPercent})` : ''}
+              {isSimulated ? `🤖 ${req.aiCategory}` : `🤖 Gemini AI (Alternatif): ${req.aiCategory}`} {confPercent ? `(${confPercent})` : ''}
             </Text>
           </View>
           {req.aiExplanation ? <Text style={ds.small}>Penjelasan: {req.aiExplanation}</Text> : null}
@@ -183,6 +208,7 @@ export default function LeaveScreen() {
 
     return (
       <Screen title="Pemeriksaan Izin" subtitle="Tinjau dan putuskan pengajuan izin praktikan secara real-time.">
+        {renderGeminiStatusBanner()}
         <View style={ds.stats}>
           <View style={ds.stat}>
             <Text style={ds.statNumber}>{assistantLeaveList.length}</Text>
@@ -251,7 +277,7 @@ export default function LeaveScreen() {
               ) : null}
 
               {req.status === 'pending' ? (
-                <View style={ds.row}>
+                <View style={ds.wrap}>
                   <Button
                     label="Terima Izin"
                     onPress={() => setReviewingItem({ request: req, decision: 'approved' })}
@@ -318,6 +344,7 @@ export default function LeaveScreen() {
   // ================= PRAKTIKAN VIEW =================
   return (
     <Screen title="Izin Praktikum" subtitle="Ajukan permohonan izin praktikum dan pantau status keputusan asisten.">
+      {renderGeminiStatusBanner()}
       {/* Tab Switcher */}
       <View style={ds.filters}>
         <Pressable

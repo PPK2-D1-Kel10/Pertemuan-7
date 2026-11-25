@@ -40,6 +40,8 @@
   },
   "scripts": {
     "start": "expo start",
+    "demo:laptop": "node scripts/demo-laptop.cjs",
+    "ai:proxy": "node scripts/ai-proxy-server.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

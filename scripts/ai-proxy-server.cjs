@@ -1,104 +1,567 @@
 /**
- * Server Proxy Backend Tepercaya untuk API AI Pengajar
- * 
+ * Server Proxy Backend Tepercaya untuk Gemini AI (Khusus Demo Laptop)
+ *
  * Penggunaan:
  * node scripts/ai-proxy-server.cjs
- * 
- * Arsitektur Keamanan:
- * - Menyimpan secret key / token API AI secara aman di sisi server (tidak terekspos ke bundle Expo / mobile client).
- * - Menerima permintaan POST dari aplikasi klien pada endpoint /api/classify.
- * - Meneruskan payload ke API AI Pengajar resmi saat kontrak API dan deployment aktif.
+ *
+ * Keamanan:
+ * - Berjalan khusus di 127.0.0.1:3001 (tidak mengekspos GEMINI_API_KEY ke bundle klien).
+ * - Verifikasi Firebase ID token dan hak akses dokumen izin sebelum memanggil Gemini.
+ * - Hanya mengirim alasan izin (tanpa nama, NIM, email, atau UID) ke Gemini REST API.
+ * - Membatasi CORS, ukuran body (4KB), timeout (10s), dan rate limit (20 req/menit).
+ * - Menyimpan hasil klasifikasi tervalidasi ke Firestore melalui akun backend tepercaya.
+ * - Tidak pernah menerima atau menolak pengajuan izin secara otomatis.
  */
 
+const fs = require('node:fs');
 const http = require('node:http');
+const path = require('node:path');
 
-const PORT = process.env.PORT || 3001;
-const TEACHER_AI_API_URL = process.env.TEACHER_AI_API_URL || '';
-const TEACHER_AI_SECRET_KEY = process.env.TEACHER_AI_SECRET_KEY || '';
+const ROOT_DIR = path.resolve(__dirname, '..');
+
+function loadEnvFile(filePath, { override = false } = {}) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (override || process.env[key] === undefined) {
+      process.env[key] = val;
+    }
+  }
+}
+
+// Muat env backend lokal terlebih dahulu, lalu .env untuk konfigurasi publik Firebase
+loadEnvFile(path.join(ROOT_DIR, '.env.backend.local'), { override: true });
+loadEnvFile(path.join(ROOT_DIR, '.env'), { override: false });
+
+const HOST = process.env.AI_PROXY_HOST || '127.0.0.1';
+const PORT = Number(process.env.AI_PROXY_PORT || process.env.PORT || 3001);
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const PREFERRED_GEMINI_MODEL = (process.env.GEMINI_MODEL || '').trim();
+const FIREBASE_PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'zerovaapp';
+const FIREBASE_API_KEY = process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '';
+
+const ALLOWED_ORIGINS = new Set(
+  (process.env.ALLOWED_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+const MAX_BODY_BYTES = 4096;
+const UPSTREAM_TIMEOUT_MS = 10000;
+const RATE_LIMIT_WINDOW_MS = 60000;
+const RATE_LIMIT_MAX_REQUESTS = 20;
+
+const ALLOWED_CATEGORIES = [
+  'Sakit',
+  'Kegiatan Akademik',
+  'Urusan Keluarga',
+  'Kondisi Darurat',
+  'Lain-lain',
+];
+
+const PREFERRED_MODELS = [
+  ...(PREFERRED_GEMINI_MODEL ? [PREFERRED_GEMINI_MODEL] : []),
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash',
+];
+
+const rateBuckets = new Map();
+let geminiState = {
+  checkedAt: 0,
+  geminiConnected: false,
+  model: null,
+  lastError: GEMINI_API_KEY ? 'Belum diverifikasi' : 'GEMINI_API_KEY belum diisi di .env.backend.local',
+};
+let trustedWriterCache = {
+  idToken: null,
+  expiresAt: 0,
+};
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const recent = (rateBuckets.get(key) || []).filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
+    rateBuckets.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  rateBuckets.set(key, recent);
+  return false;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sendJson(res, statusCode, payload, allowedOrigin = null) {
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+    headers['Vary'] = 'Origin';
+  }
+  res.writeHead(statusCode, headers);
+  res.end(JSON.stringify(payload));
+}
+
+function readRequestBody(req, maxBytes = MAX_BODY_BYTES) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    let oversized = false;
+    req.on('data', (chunk) => {
+      if (oversized) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        oversized = true;
+        const err = new Error('Payload melebihi batas ukuran maksimum (4KB).');
+        err.statusCode = 413;
+        reject(err);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!oversized) resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function verifyGeminiFreeTierModel(forceRefresh = false) {
+  const apiKey = (process.env.GEMINI_API_KEY || GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
+    geminiState = {
+      checkedAt: Date.now(),
+      geminiConnected: false,
+      model: null,
+      lastError: 'GEMINI_API_KEY belum diisi di .env.backend.local',
+    };
+    return geminiState;
+  }
+
+  const now = Date.now();
+  if (!forceRefresh && geminiState.checkedAt && now - geminiState.checkedAt < 60000 && geminiState.geminiConnected) {
+    return geminiState;
+  }
+
+  try {
+    const resp = await fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      { method: 'GET' },
+      8000
+    );
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data?.error?.message || `HTTP ${resp.status}`);
+    }
+
+    const models = Array.isArray(data.models) ? data.models : [];
+    const flashCandidates = models
+      .filter(
+        (m) =>
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent') &&
+          typeof m.name === 'string' &&
+          m.name.toLowerCase().includes('flash')
+      )
+      .map((m) => m.name.replace(/^models\//, ''));
+
+    let chosen = null;
+    for (const pref of PREFERRED_MODELS) {
+      if (flashCandidates.includes(pref)) {
+        chosen = pref;
+        break;
+      }
+    }
+    if (!chosen && flashCandidates.length) {
+      chosen = flashCandidates[0];
+    }
+
+    if (!chosen) {
+      throw new Error('Tidak ditemukan model Gemini Flash / Flash-Lite yang mendukung generateContent.');
+    }
+
+    geminiState = {
+      checkedAt: now,
+      geminiConnected: true,
+      model: chosen,
+      lastError: null,
+    };
+  } catch (err) {
+    geminiState = {
+      checkedAt: now,
+      geminiConnected: false,
+      model: null,
+      lastError: err.message || 'Gagal memverifikasi Gemini API',
+    };
+  }
+  return geminiState;
+}
+
+async function verifyFirebaseIdToken(idToken) {
+  if (!FIREBASE_API_KEY) {
+    throw new Error('Konfigurasi Firebase API key tidak tersedia di server.');
+  }
+  const resp = await fetchWithTimeout(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    },
+    6000
+  );
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !Array.isArray(data.users) || !data.users[0]?.localId) {
+    const err = new Error('Token Firebase tidak valid atau sudah kedaluwarsa.');
+    err.statusCode = 401;
+    throw err;
+  }
+  return { uid: data.users[0].localId };
+}
+
+async function readFirestoreDoc(docPath, bearerToken) {
+  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${docPath}`;
+  const resp = await fetchWithTimeout(
+    url,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${bearerToken}` },
+    },
+    6000
+  );
+  if (resp.status === 404) return null;
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(data?.error?.message || `Gagal membaca dokumen Firestore (${resp.status}).`);
+    err.statusCode = resp.status === 403 ? 403 : 502;
+    throw err;
+  }
+  return data.fields || {};
+}
+
+async function getTrustedAssistantToken() {
+  const now = Date.now();
+  if (trustedWriterCache.idToken && now < trustedWriterCache.expiresAt - 60000) {
+    return trustedWriterCache.idToken;
+  }
+
+  let email = (process.env.FIREBASE_TRUSTED_EMAIL || '').trim();
+  let password = (process.env.FIREBASE_TRUSTED_PASSWORD || '').trim();
+
+  if (!email || !password) {
+    const credPath = path.join(ROOT_DIR, '.demo-credentials.local');
+    if (fs.existsSync(credPath)) {
+      const creds = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+      email = creds?.asisten?.email || '';
+      password = creds?.asisten?.password || '';
+    }
+  }
+
+  if (!email || !password || !FIREBASE_API_KEY) {
+    throw new Error('Kredensial backend tepercaya tidak tersedia.');
+  }
+
+  const resp = await fetchWithTimeout(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    },
+    6000
+  );
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.idToken) {
+    throw new Error(data?.error?.message || 'Autentikasi backend tepercaya gagal.');
+  }
+
+  const expiresInSec = Number(data.expiresIn || 3600);
+  trustedWriterCache = {
+    idToken: data.idToken,
+    expiresAt: now + expiresInSec * 1000,
+  };
+  return data.idToken;
+}
+
+async function writeAiResultToFirestore(leaveId, aiResult) {
+  const writerToken = await getTrustedAssistantToken();
+  const mask = [
+    'updateMask.fieldPaths=aiCategory',
+    'updateMask.fieldPaths=aiConfidence',
+    'updateMask.fieldPaths=aiExplanation',
+    'updateMask.fieldPaths=aiStatus',
+  ].join('&');
+  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/sprint2Data/app/leaveRequests/${encodeURIComponent(leaveId)}?${mask}`;
+
+  const payload = {
+    fields: {
+      aiCategory: { stringValue: aiResult.category },
+      aiConfidence: { doubleValue: aiResult.confidence },
+      aiExplanation: { stringValue: aiResult.explanation },
+      aiStatus: { stringValue: aiResult.status },
+    },
+  };
+
+  const resp = await fetchWithTimeout(
+    url,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${writerToken}`,
+      },
+      body: JSON.stringify(payload),
+    },
+    6000
+  );
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '');
+    throw new Error(`Gagal menyimpan hasil AI ke Firestore (${resp.status}): ${errBody}`);
+  }
+}
+
+async function classifyWithGemini(reasonOnly, modelName) {
+  const apiKey = (process.env.GEMINI_API_KEY || GEMINI_API_KEY || '').trim();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const systemPrompt =
+    'Anda asisten klasifikasi alasan izin praktikum mahasiswa. ' +
+    'Tugas Anda HANYA mengklasifikasikan alasan ke tepat satu kategori berikut: ' +
+    '"Sakit", "Kegiatan Akademik", "Urusan Keluarga", "Kondisi Darurat", atau "Lain-lain". ' +
+    'Berikan confidence (0.0 sampai 1.0) dan explanation singkat 1 kalimat dalam bahasa Indonesia. ' +
+    'JANGAN pernah menyetujui atau menolak pengajuan izin.';
+
+  const body = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: `Alasan izin praktikan: "${reasonOnly}"` }] }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 200,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          category: { type: 'STRING', enum: ALLOWED_CATEGORIES },
+          confidence: { type: 'NUMBER' },
+          explanation: { type: 'STRING' },
+        },
+        required: ['category', 'confidence', 'explanation'],
+      },
+    },
+  };
+
+  const resp = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    UPSTREAM_TIMEOUT_MS
+  );
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data?.error?.message || `Gemini API HTTP ${resp.status}`);
+  }
+
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawText) {
+    throw new Error('Respons Gemini kosong.');
+  }
+
+  const parsed = JSON.parse(rawText);
+  const category = ALLOWED_CATEGORIES.includes(parsed.category) ? parsed.category : 'Lain-lain';
+  const rawConf = typeof parsed.confidence === 'number' ? parsed.confidence : 0.85;
+  const confidence = Math.max(0, Math.min(1, Number(rawConf.toFixed(2))));
+  const cleanExpl = String(parsed.explanation || 'Memerlukan peninjauan manual asisten.')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220);
+
+  return {
+    category,
+    confidence,
+    explanation: `[Gemini AI • ${modelName}] ${cleanExpl}`,
+    status: 'success',
+    model: modelName,
+  };
+}
 
 const server = http.createServer(async (req, res) => {
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const origin = req.headers.origin;
+  const isOriginAllowed = !origin || ALLOWED_ORIGINS.has(origin);
+  const corsOrigin = origin && isOriginAllowed ? origin : null;
+
+  if (origin && !isOriginAllowed) {
+    sendJson(res, 403, { error: 'Origin tidak diizinkan oleh kebijakan CORS proxy lokal.' });
+    return;
+  }
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
+    res.writeHead(204, {
+      ...(corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin, Vary: 'Origin' } : {}),
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    });
     res.end();
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/api/classify') {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
-    });
-
-    req.on('end', async () => {
-      try {
-        const parsed = JSON.parse(body || '{}');
-        const reason = (parsed.reason || '').trim();
-
-        if (!reason) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Field "reason" wajib diisi.' }));
-          return;
-        }
-
-        // Jika URL API Pengajar resmi dikonfigurasi di server
-        if (TEACHER_AI_API_URL) {
-          const fetchRes = await fetch(TEACHER_AI_API_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(TEACHER_AI_SECRET_KEY ? { Authorization: `Bearer ${TEACHER_AI_SECRET_KEY}` } : {}),
-            },
-            body: JSON.stringify({ reason }),
-          });
-
-          if (!fetchRes.ok) {
-            throw new Error(`Upstream AI API error: ${fetchRes.status}`);
-          }
-
-          const upstreamData = await fetchRes.json();
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(upstreamData));
-          return;
-        }
-
-        // Mode Proxy Aktif (Menunggu URL dari Pengajar)
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            category: 'Lain-lain',
-            confidence: 0.85,
-            explanation: 'Proxy backend aktif. Menunggu endpoint upstream resmi dari pengajar.',
-            status: 'proxy_ready',
-          })
-        );
-      } catch (err) {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: err.message }));
-      }
-    });
-    return;
-  }
-
-  // Health check endpoint
   if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', service: 'praktiKu-ai-proxy', uptime: process.uptime() }));
+    const state = await verifyGeminiFreeTierModel(false);
+    sendJson(
+      res,
+      200,
+      {
+        status: 'ok',
+        service: 'praktiKu-ai-proxy',
+        geminiConnected: state.geminiConnected,
+        model: state.model,
+        mode: state.geminiConnected ? 'gemini_live' : 'unavailable',
+        error: state.lastError,
+        uptime: process.uptime(),
+      },
+      corsOrigin
+    );
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Endpoint tidak ditemukan' }));
+  if (req.method === 'POST' && req.url === '/api/classify') {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+      if (!idToken) {
+        sendJson(res, 401, { error: 'Authorization Bearer Firebase ID token wajib disertakan.' }, corsOrigin);
+        return;
+      }
+
+      const rawBody = await readRequestBody(req);
+      let parsedBody;
+      try {
+        parsedBody = JSON.parse(rawBody || '{}');
+      } catch {
+        sendJson(res, 400, { error: 'Body JSON tidak valid.' }, corsOrigin);
+        return;
+      }
+
+      const rawReason = typeof parsedBody.reason === 'string' ? parsedBody.reason.replace(/\s+/g, ' ').trim() : '';
+      const leaveId = typeof parsedBody.leaveId === 'string' ? parsedBody.leaveId.trim() : '';
+
+      if (!rawReason || rawReason.length > 1000) {
+        sendJson(res, 400, { error: 'Field "reason" wajib diisi (maksimal 1000 karakter).' }, corsOrigin);
+        return;
+      }
+      if (!leaveId || !/^[a-zA-Z0-9_-]{3,140}$/.test(leaveId)) {
+        sendJson(res, 400, { error: 'Field "leaveId" wajib diisi dengan format valid.' }, corsOrigin);
+        return;
+      }
+
+      const { uid: callerUid } = await verifyFirebaseIdToken(idToken);
+      const clientIp = req.socket?.remoteAddress || '127.0.0.1';
+      if (isRateLimited(`${clientIp}:${callerUid}`)) {
+        sendJson(res, 429, { error: 'Terlalu banyak permintaan klasifikasi. Coba lagi sebentar.' }, corsOrigin);
+        return;
+      }
+
+      // Verifikasi hak akses dokumen izin di Firestore
+      const leaveFields = await readFirestoreDoc(`sprint2Data/app/leaveRequests/${encodeURIComponent(leaveId)}`, idToken);
+      if (!leaveFields) {
+        sendJson(res, 404, { error: 'Dokumen pengajuan izin tidak ditemukan.' }, corsOrigin);
+        return;
+      }
+      const docStudentUid = leaveFields.studentUid?.stringValue || '';
+      if (docStudentUid !== callerUid) {
+        const userFields = await readFirestoreDoc(`sprint2Data/app/users/${encodeURIComponent(callerUid)}`, idToken);
+        const callerRole = userFields?.role?.stringValue || '';
+        if (callerRole !== 'asisten' && callerRole !== 'Asisten') {
+          sendJson(res, 403, { error: 'Anda tidak memiliki izin menganalisis pengajuan ini.' }, corsOrigin);
+          return;
+        }
+      }
+
+      // Verifikasi ketersediaan Gemini Free Tier
+      const state = await verifyGeminiFreeTierModel(false);
+      if (!state.geminiConnected || !state.model) {
+        sendJson(
+          res,
+          503,
+          {
+            error: state.lastError || 'Gemini API belum terhubung.',
+            status: 'unavailable',
+            geminiConnected: false,
+          },
+          corsOrigin
+        );
+        return;
+      }
+
+      // Kirim HANYA alasan izin (tanpa identitas pribadi apa pun) ke Gemini
+      const aiResult = await classifyWithGemini(rawReason, state.model);
+
+      // Simpan hasil terstruktur ke Firestore melalui akun backend tepercaya
+      let persistedByBackend = false;
+      try {
+        await writeAiResultToFirestore(leaveId, aiResult);
+        persistedByBackend = true;
+      } catch (persistErr) {
+        console.warn('[AI Proxy] Gagal menyimpan hasil AI ke Firestore:', persistErr.message);
+      }
+
+      sendJson(
+        res,
+        200,
+        {
+          ...aiResult,
+          geminiConnected: true,
+          persistedByBackend,
+        },
+        corsOrigin
+      );
+    } catch (err) {
+      const code = err.statusCode || 502;
+      sendJson(
+        res,
+        code,
+        { error: err.message || 'Gagal memproses klasifikasi Gemini.', status: 'failed' },
+        corsOrigin
+      );
+    }
+    return;
+  }
+
+  sendJson(res, 404, { error: 'Endpoint tidak ditemukan.' }, corsOrigin);
 });
 
 if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`[AI Proxy Backend] Server berjalan di http://localhost:${PORT}`);
-    console.log(`[AI Proxy Backend] Upstream API: ${TEACHER_AI_API_URL || 'Belum Dikonfigurasi (Menunggu Pengajar)'}`);
+  server.listen(PORT, HOST, async () => {
+    const state = await verifyGeminiFreeTierModel(true);
+    console.log(`[AI Proxy Backend] Berjalan khusus laptop di http://${HOST}:${PORT}`);
+    console.log(
+      `[AI Proxy Backend] Status Gemini: ${state.geminiConnected ? `TERHUBUNG (${state.model})` : `BELUM TERHUBUNG (${state.lastError})`}`
+    );
   });
 }
 
