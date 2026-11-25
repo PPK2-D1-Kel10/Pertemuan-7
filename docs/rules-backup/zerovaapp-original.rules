@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// Firestore Security Rules — Role Management (ZerovaApp / zerovaapp)
+// JANGAN publish tanpa review. Bandingkan blok "mahasiswa" dengan rules existing
+// di Firebase Console; jika rules lama berbeda, pertahankan versi lama untuk blok itu.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Role dibaca dari dokumen users/{uid} milik pemanggil (sumber terpercaya).
+    function isSuperAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    // Data mahasiswa (fitur lama): user login boleh membaca.
+    match /mahasiswa/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // Dokumen role: users/{uid}
+    match /users/{userId} {
+      // User hanya boleh membaca dokumen role miliknya sendiri; super admin boleh membaca semua.
+      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      // Klien TIDAK boleh membuat/mengubah/menghapus role.
+      // Role hanya ditetapkan manual via Firebase Console / Admin SDK (melewati rules).
+      allow create, update, delete: if false;
+    }
+  }
+}
